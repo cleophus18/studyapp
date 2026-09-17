@@ -2246,7 +2246,7 @@ function JavaTopics({
                   }}
                 />
               </div>
-              <Link to={`/quiz/${topic}`}>Practice →</Link>
+              <Link to={`/quiz/${topic}`} onClick={(event) => event.stopPropagation()}>Practice →</Link>
             </div>
           </article>
         ))}
@@ -2318,6 +2318,7 @@ function PhysicsTopics({ onBack }: { onBack: () => void }) {
 function CalculusTopics({ onBack }: { onBack: () => void }) {
   const [query, setQuery] = useState("");
   const [revealedExercises, setRevealedExercises] = useState<number[]>([]);
+  const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
   const visible = calculusTopics
     .map((topic, index) => ({ topic, index }))
     .filter(({ topic }) => topic.toLowerCase().includes(query.toLowerCase()));
@@ -2362,7 +2363,11 @@ function CalculusTopics({ onBack }: { onBack: () => void }) {
       </section>
       <div className="topic-grid">
         {visible.map(({ topic, index }) => (
-          <article className="topic-card" key={topic}>
+          <article
+            className={selectedTopic === topic ? "topic-card selected" : "topic-card"}
+            key={topic}
+            onClick={() => setSelectedTopic((current) => current === topic ? null : topic)}
+          >
             <div className={`topic-icon t${index % 6}`}>{calculusTopicIcons[index]}</div>
             <div className="topic-card-head">
               <span className="eyebrow">CALCULUS TOPIC {String(index + 1).padStart(2, "0")}</span>
@@ -2374,9 +2379,9 @@ function CalculusTopics({ onBack }: { onBack: () => void }) {
               <div className="tiny-bar"><i style={{ width: "0%" }} /></div>
               <Link to={`/quiz/${topic}`}>Practice →</Link>
             </div>
-            {calculusExercises.filter((exercise) => exercise.topic === topic).length > 0 && (
+            {selectedTopic === topic && (
               <div className="topic-exercises">
-                <span className="eyebrow">MAT1141 EXERCISE 16</span>
+                <span className="eyebrow">TOPIC EXERCISES · TAP TO COLLAPSE</span>
                 {calculusExercises
                   .filter((exercise) => exercise.topic === topic)
                   .map((exercise) => {
@@ -2387,7 +2392,10 @@ function CalculusTopics({ onBack }: { onBack: () => void }) {
                         <p>{exercise.prompt}</p>
                         <button
                           className="text-link"
-                          onClick={() => setRevealedExercises((current) => revealed ? current.filter((item) => item !== exerciseIndex) : [...current, exerciseIndex])}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setRevealedExercises((current) => revealed ? current.filter((item) => item !== exerciseIndex) : [...current, exerciseIndex]);
+                          }}
                         >
                           {revealed ? "Hide answer" : "Reveal answer"}
                         </button>

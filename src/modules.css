@@ -35,6 +35,8 @@
 .equation-card{border:1px solid var(--line);border-radius:6px;padding:15px;background:var(--canvas)}
 .equation-card code{display:block;margin-top:9px;color:var(--purple);font:12px/1.6 'DM Mono',monospace;white-space:normal}
 .topic-exercises{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+.topic-card{cursor:pointer}
+.topic-card.selected{border-color:var(--purple);box-shadow:0 8px 22px rgba(101,81,212,.12)}
 .topic-exercise{margin-top:10px;padding:10px;background:var(--canvas);border-radius:5px}
 .topic-exercise p{margin:0 0 5px;font-size:12px;line-height:1.5}
 .topic-exercise .text-link{border:0;background:none;padding:0;margin:0}
