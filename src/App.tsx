@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BrowserRouter,
   Link,
@@ -18,6 +18,23 @@ import { Notes as NotesPage } from "./pages/Notes";
 import { TimedTest as TimedTestPage } from "./pages/TimedTest";
 import { popularCourses as courseCatalog } from "./utils/courseCatalog";
 import { degreeCatalog } from "./utils/degreeCatalog";
+import { javaQuestionBank } from "./utils/javaQuestionBank";
+import { findNote } from "./utils/javaNotes";
+import {
+  getBestWeekStreak,
+  getWeekStreak,
+  hasActivityThisWeek,
+  recordWeeklyActivity,
+} from "./utils/streak";
+import {
+  CODE_TTL_MS,
+  checkStudentEmail,
+  clearPendingVerification,
+  generateVerificationCode,
+  readPendingVerification,
+  requestVerificationCode,
+  savePendingVerification,
+} from "./utils/emailVerification";
 
 type Difficulty = "Easy" | "Medium" | "Hard";
 type User = {
@@ -90,6 +107,7 @@ const moduleCatalog = [
     category: "Coding",
     icon: "☕",
     active: true,
+    visible: true,
     description:
       "Programming fundamentals, OOP, and practical Java challenges.",
   },
@@ -98,6 +116,7 @@ const moduleCatalog = [
     category: "Physics",
     icon: "⚙",
     active: true,
+    visible: false,
     description: "Motion, forces, energy, and mechanical systems.",
   },
   {
@@ -105,6 +124,7 @@ const moduleCatalog = [
     category: "Coding",
     icon: "◇",
     active: false,
+    visible: false,
     description: "Web programming and modern JavaScript practice.",
   },
   {
@@ -112,6 +132,7 @@ const moduleCatalog = [
     category: "Coding",
     icon: "🐍",
     active: false,
+    visible: false,
     description: "Programming, automation, and data foundations.",
   },
   {
@@ -119,6 +140,7 @@ const moduleCatalog = [
     category: "Mathematics",
     icon: "∫",
     active: true,
+    visible: false,
     description: "Limits, derivatives, and integration.",
   },
   {
@@ -126,11 +148,12 @@ const moduleCatalog = [
     category: "Mathematics",
     icon: "∑",
     active: false,
+    visible: false,
     description: "Areas, antiderivatives, and definite integrals.",
   },
 ];
 
-const popularCourses = courseCatalog;
+void courseCatalog;
 
 const physicsTopics = [
   "Motion & Forces",
@@ -163,7 +186,22 @@ const calculusTopics = [
   "Mean Value Theorem",
   "Curve Sketching",
 ];
-const calculusTopicIcons = ["∿", "→", "∞", "◌", "d", "ƒ", "⛓", "↔", "π", "H", "Σ", "↗", "≡", "⌁"];
+const calculusTopicIcons = [
+  "∿",
+  "→",
+  "∞",
+  "◌",
+  "d",
+  "ƒ",
+  "⛓",
+  "↔",
+  "π",
+  "H",
+  "Σ",
+  "↗",
+  "≡",
+  "⌁",
+];
 const calculusTopicDescriptions = [
   "Algebra review, domains, ranges, graphs, and function transformations",
   "Evaluate limits numerically, graphically, and algebraically",
@@ -187,9 +225,15 @@ const calculusQuestions: Question[] = calculusTopics.flatMap((topic, index) => [
     difficulty: "Easy" as Difficulty,
     kind: "multiple-choice",
     prompt: `${topic}: Which habit gives the most reliable first step?`,
-    options: ["Write the definition and known conditions", "Guess from the graph", "Ignore the domain", "Round before calculating"],
+    options: [
+      "Write the definition and known conditions",
+      "Guess from the graph",
+      "Ignore the domain",
+      "Round before calculating",
+    ],
     answer: 0,
-    explanation: "Start from the definition, conditions, and domain before applying a shortcut.",
+    explanation:
+      "Start from the definition, conditions, and domain before applying a shortcut.",
   },
   {
     id: `calculus-${index}-medium`,
@@ -200,18 +244,20 @@ const calculusQuestions: Question[] = calculusTopics.flatMap((topic, index) => [
     options: [],
     answer: 0,
     textAnswer: "domain",
-    explanation: "Checking the domain and conditions keeps the calculus argument valid.",
+    explanation:
+      "Checking the domain and conditions keeps the calculus argument valid.",
   },
   {
     id: `calculus-${index}-exercise`,
     topic,
     difficulty: "Medium" as Difficulty,
     kind: "written answer",
-    prompt: `${topic} exercise: Enter the key word or condition you must state before solving.` ,
+    prompt: `${topic} exercise: Enter the key word or condition you must state before solving.`,
     options: [],
     answer: 0,
     textAnswer: "domain",
-    explanation: "State the domain and conditions before applying a calculus rule.",
+    explanation:
+      "State the domain and conditions before applying a calculus rule.",
   },
   {
     id: `calculus-${index}-equation`,
@@ -228,7 +274,7 @@ const calculusQuestions: Question[] = calculusTopics.flatMap((topic, index) => [
     topic,
     difficulty: "Hard" as Difficulty,
     kind: "written answer",
-    prompt: `${topic} exercise: Write one check you should perform after calculating.` ,
+    prompt: `${topic} exercise: Write one check you should perform after calculating.`,
     options: [],
     answer: 0,
     textAnswer: "check",
@@ -243,13 +289,17 @@ const calculusQuestions: Question[] = calculusTopics.flatMap((topic, index) => [
     options: [],
     answer: 0,
     textAnswer: "show steps",
-    explanation: "A hard calculus solution should name the relevant theorem or rule, show the algebra clearly, and verify the result against the domain or conditions.",
+    explanation:
+      "A hard calculus solution should name the relevant theorem or rule, show the algebra clearly, and verify the result against the domain or conditions.",
   },
 ]);
 const calculusEquations = [
   ["Limit laws", "lim (f(x) + g(x)) = lim f(x) + lim g(x)"],
   ["Continuity", "f is continuous at a when lim(x→a) f(x) = f(a)"],
-  ["Derivative from first principles", "f′(x) = lim(h→0) [f(x + h) − f(x)] / h"],
+  [
+    "Derivative from first principles",
+    "f′(x) = lim(h→0) [f(x + h) − f(x)] / h",
+  ],
   ["Power rule", "d/dx [xⁿ] = n xⁿ⁻¹"],
   ["Product rule", "d/dx [uv] = u′v + uv′"],
   ["Quotient rule", "d/dx [u/v] = (u′v − uv′) / v²"],
@@ -257,7 +307,10 @@ const calculusEquations = [
   ["Exponential function", "d/dx [eˣ] = eˣ"],
   ["Logarithm", "d/dx [ln x] = 1/x,  x > 0"],
   ["Trigonometric functions", "d/dx [sin x] = cos x;  d/dx [cos x] = −sin x"],
-  ["L’Hôpital’s rule", "lim f/g = lim f′/g′ when the original limit is 0/0 or ∞/∞"],
+  [
+    "L’Hôpital’s rule",
+    "lim f/g = lim f′/g′ when the original limit is 0/0 or ∞/∞",
+  ],
   ["Taylor polynomial", "Tₙ(x) = Σ(k=0 to n) f⁽ᵏ⁾(a)(x − a)ᵏ / k!"],
   ["Critical points", "f′(c) = 0 or f′(c) is undefined"],
   ["Mean Value Theorem", "f′(c) = [f(b) − f(a)] / (b − a),  a < c < b"],
@@ -270,7 +323,8 @@ const calculusExercises = [
   },
   {
     topic: "Preliminaries & Functions",
-    prompt: "Given f(x) = 2x − 3 and g(x) = 2 − x, find (f + g)(x) and (f − g)(x).",
+    prompt:
+      "Given f(x) = 2x − 3 and g(x) = 2 − x, find (f + g)(x) and (f − g)(x).",
     answer: "(f + g)(x) = x − 1 and (f − g)(x) = 3x − 5.",
   },
   {
@@ -305,12 +359,15 @@ const calculusExercises = [
   },
   {
     topic: "Continuity",
-    prompt: "State the three checks needed to prove that f is continuous at x = a.",
-    answer: "f(a) must exist, lim(x→a) f(x) must exist, and the limit must equal f(a).",
+    prompt:
+      "State the three checks needed to prove that f is continuous at x = a.",
+    answer:
+      "f(a) must exist, lim(x→a) f(x) must exist, and the limit must equal f(a).",
   },
   {
     topic: "The Derivative",
-    prompt: "Use the derivative definition to find the slope of f(x) = x² at x = 3.",
+    prompt:
+      "Use the derivative definition to find the slope of f(x) = x² at x = 3.",
     answer: "f′(3) = lim(h→0) [(3+h)²−9]/h = 6.",
   },
   {
@@ -340,7 +397,8 @@ const calculusExercises = [
   },
   {
     topic: "Taylor & Maclaurin",
-    prompt: "Write the first three non-zero terms of the Maclaurin series for eˣ.",
+    prompt:
+      "Write the first three non-zero terms of the Maclaurin series for eˣ.",
     answer: "eˣ ≈ 1 + x + x²/2! (with further terms x³/3!, ...).",
   },
   {
@@ -356,7 +414,8 @@ const calculusExercises = [
   {
     topic: "Curve Sketching",
     prompt: "For f(x) = x³ − 3x, find the stationary points.",
-    answer: "f′(x) = 3x² − 3 = 0, so x = ±1; the points are (−1, 2) and (1, −2).",
+    answer:
+      "f′(x) = 3x² − 3 = 0, so x = ±1; the points are (−1, 2) and (1, −2).",
   },
 ];
 
@@ -1083,54 +1142,73 @@ const questions: Question[] = topics.flatMap((topic, topicIndex) =>
     },
   ),
 );
-const physicsQuestions: Question[] = physicsTopics.flatMap((topic, topicIndex) => [
-  {
-    id: `physics-${topicIndex}-easy`,
-    topic,
-    difficulty: "Easy" as Difficulty,
-    kind: "multiple-choice",
-    prompt: `${topic}: Which approach is the best first step when solving a ${topic.toLowerCase()} problem?`,
-    options: ["Name the known values and units", "Guess the answer", "Skip the diagram", "Change units at random"],
-    answer: 0,
-    explanation: "Listing known values and units makes the relationship and required formula clear.",
+const physicsQuestions: Question[] = physicsTopics.flatMap(
+  (topic, topicIndex) => [
+    {
+      id: `physics-${topicIndex}-easy`,
+      topic,
+      difficulty: "Easy" as Difficulty,
+      kind: "multiple-choice",
+      prompt: `${topic}: Which approach is the best first step when solving a ${topic.toLowerCase()} problem?`,
+      options: [
+        "Name the known values and units",
+        "Guess the answer",
+        "Skip the diagram",
+        "Change units at random",
+      ],
+      answer: 0,
+      explanation:
+        "Listing known values and units makes the relationship and required formula clear.",
+    },
+    {
+      id: `physics-${topicIndex}-medium`,
+      topic,
+      difficulty: "Medium" as Difficulty,
+      kind: "written answer",
+      prompt: `${topic}: Type the word for checking whether an answer has sensible units.`,
+      options: [],
+      answer: 0,
+      textAnswer: "dimensional analysis",
+      explanation:
+        "Dimensional analysis checks that the units on both sides of a calculation agree.",
+    },
+    {
+      id: `physics-${topicIndex}-hard`,
+      topic,
+      difficulty: "Hard" as Difficulty,
+      kind: "written answer",
+      prompt: `${topic}: Solve a multi-step problem, identify the governing law, show your working, and include the correct SI units.`,
+      options: [],
+      answer: 0,
+      textAnswer: "show working",
+      explanation:
+        "For a difficult physics problem, define the known values, choose the law, keep units consistent, and check whether the final result is physically reasonable.",
+    },
+  ],
+);
+const expandedCalculusQuestions = calculusTopics.flatMap(
+  (topic, topicIndex) => {
+    const baseQuestions = calculusQuestions.filter(
+      (question) => question.topic === topic,
+    );
+    return Array.from({ length: 24 }, (_, variant) => {
+      const question = baseQuestions[variant % baseQuestions.length];
+      return {
+        ...question,
+        id: `calculus-${topicIndex}-question-${variant + 1}`,
+        prompt:
+          variant < baseQuestions.length
+            ? question.prompt
+            : `${question.prompt} (Exercise ${variant + 1})`,
+      };
+    });
   },
-  {
-    id: `physics-${topicIndex}-medium`,
-    topic,
-    difficulty: "Medium" as Difficulty,
-    kind: "written answer",
-    prompt: `${topic}: Type the word for checking whether an answer has sensible units.`,
-    options: [],
-    answer: 0,
-    textAnswer: "dimensional analysis",
-    explanation: "Dimensional analysis checks that the units on both sides of a calculation agree.",
-  },
-  {
-    id: `physics-${topicIndex}-hard`,
-    topic,
-    difficulty: "Hard" as Difficulty,
-    kind: "written answer",
-    prompt: `${topic}: Solve a multi-step problem, identify the governing law, show your working, and include the correct SI units.`,
-    options: [],
-    answer: 0,
-    textAnswer: "show working",
-    explanation: "For a difficult physics problem, define the known values, choose the law, keep units consistent, and check whether the final result is physically reasonable.",
-  },
-]);
-const expandedCalculusQuestions = calculusTopics.flatMap((topic, topicIndex) => {
-  const baseQuestions = calculusQuestions.filter((question) => question.topic === topic);
-  return Array.from({ length: 24 }, (_, variant) => {
-    const question = baseQuestions[variant % baseQuestions.length];
-    return {
-      ...question,
-      id: `calculus-${topicIndex}-question-${variant + 1}`,
-      prompt: variant < baseQuestions.length
-        ? question.prompt
-        : `${question.prompt} (Exercise ${variant + 1})`,
-    };
-  });
-});
-const allQuestions = [...questions, ...physicsQuestions, ...expandedCalculusQuestions];
+);
+const allQuestions = [
+  ...questions,
+  ...physicsQuestions,
+  ...expandedCalculusQuestions,
+];
 
 function api<T>(path: string, options?: RequestInit): Promise<T> {
   return fetch(path, {
@@ -1147,12 +1225,7 @@ function api<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 function App() {
-  void Landing;
-  // Legacy inline page implementations remain available for backwards-compatible
-  // snapshots while the routed pages live under src/pages.
-  void CourseSelection;
-  void TimedTest;
-  void Notes;
+  // Routed pages live under src/pages.
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<User | null>(() =>
     JSON.parse(localStorage.getItem("java-user") || "null"),
@@ -1198,6 +1271,8 @@ function App() {
     localStorage.setItem("java-answered", JSON.stringify(nextAnswered));
     localStorage.setItem("java-scores", JSON.stringify([...scores, score]));
     localStorage.setItem("java-xp", String(xp + earned));
+    // Answering a quiz keeps the weekly streak alive.
+    recordWeeklyActivity();
   };
   const updateCourses = (courses: string[]) => {
     const next = [...new Set(courses)];
@@ -1213,7 +1288,7 @@ function App() {
             path="/"
             element={
               user ? (
-                <Navigate to={selectedCourses.length ? "/dashboard" : "/course-selection"} replace />
+                <Navigate to="/dashboard" replace />
               ) : (
                 <Navigate to="/auth" replace />
               )
@@ -1223,27 +1298,27 @@ function App() {
             path="/auth"
             element={
               user ? (
-                <Navigate to={selectedCourses.length ? "/dashboard" : "/course-selection"} replace />
+                <Navigate to="/dashboard" replace />
               ) : (
                 <Auth onAuth={authenticate} />
               )
             }
           />
-          <Route path="/terms" element={<LegalPage title="Terms and Conditions" />} />
-          <Route path="/privacy" element={<LegalPage title="Privacy Notice" />} />
+          <Route
+            path="/terms"
+            element={<LegalPage title="Terms and Conditions" />}
+          />
+          <Route
+            path="/privacy"
+            element={<LegalPage title="Privacy Notice" />}
+          />
+          <Route path="/about" element={<LegalPage title="About StudyLab" />} />
           <Route
             path="/course-selection"
             element={
               <Guard user={user}>
                 <Shell
                   user={user}
-                  dark={dark}
-                  toggleTheme={() => {
-                    const next = !dark;
-                    setDark(next);
-                    localStorage.setItem("java-theme", next ? "dark" : "light");
-                  }}
-                  logout={logout}
                 >
                   <CourseSelectionPage
                     selectedCourses={selectedCourses}
@@ -1253,7 +1328,10 @@ function App() {
                       if (!user) return;
                       const nextUser = { ...user, degree };
                       setUser(nextUser);
-                      localStorage.setItem("java-user", JSON.stringify(nextUser));
+                      localStorage.setItem(
+                        "java-user",
+                        JSON.stringify(nextUser),
+                      );
                     }}
                   />
                 </Shell>
@@ -1266,18 +1344,11 @@ function App() {
               <Guard user={user}>
                 <Shell
                   user={user}
-                  dark={dark}
-                  toggleTheme={() => {
-                    const next = !dark;
-                    setDark(next);
-                    localStorage.setItem("java-theme", next ? "dark" : "light");
-                  }}
-                  logout={logout}
                 >
                   <Dashboard
                     user={user}
                     answered={answered}
-                    xp={xp}
+                    scores={scores}
                     selectedCourses={selectedCourses}
                   />
                 </Shell>
@@ -1290,15 +1361,11 @@ function App() {
               <Guard user={user}>
                 <Shell
                   user={user}
-                  dark={dark}
-                  toggleTheme={() => {
-                    const next = !dark;
-                    setDark(next);
-                    localStorage.setItem("java-theme", next ? "dark" : "light");
-                  }}
-                  logout={logout}
                 >
-                  <Modules answered={answered} selectedCourses={selectedCourses} />
+                  <Modules
+                    answered={answered}
+                    selectedCourses={selectedCourses}
+                  />
                 </Shell>
               </Guard>
             }
@@ -1310,13 +1377,6 @@ function App() {
               <Guard user={user}>
                 <Shell
                   user={user}
-                  dark={dark}
-                  toggleTheme={() => {
-                    const next = !dark;
-                    setDark(next);
-                    localStorage.setItem("java-theme", next ? "dark" : "light");
-                  }}
-                  logout={logout}
                 >
                   <Practice />
                 </Shell>
@@ -1329,13 +1389,6 @@ function App() {
               <Guard user={user}>
                 <Shell
                   user={user}
-                  dark={dark}
-                  toggleTheme={() => {
-                    const next = !dark;
-                    setDark(next);
-                    localStorage.setItem("java-theme", next ? "dark" : "light");
-                  }}
-                  logout={logout}
                 >
                   <TimedTestPage questions={allQuestions} />
                 </Shell>
@@ -1348,13 +1401,6 @@ function App() {
               <Guard user={user}>
                 <Shell
                   user={user}
-                  dark={dark}
-                  toggleTheme={() => {
-                    const next = !dark;
-                    setDark(next);
-                    localStorage.setItem("java-theme", next ? "dark" : "light");
-                  }}
-                  logout={logout}
                 >
                   <NotesPage />
                 </Shell>
@@ -1367,13 +1413,6 @@ function App() {
               <Guard user={user}>
                 <Shell
                   user={user}
-                  dark={dark}
-                  toggleTheme={() => {
-                    const next = !dark;
-                    setDark(next);
-                    localStorage.setItem("java-theme", next ? "dark" : "light");
-                  }}
-                  logout={logout}
                 >
                   <Quiz onFinish={recordQuiz} />
                 </Shell>
@@ -1386,15 +1425,8 @@ function App() {
               <Guard user={user}>
                 <Shell
                   user={user}
-                  dark={dark}
-                  toggleTheme={() => {
-                    const next = !dark;
-                    setDark(next);
-                    localStorage.setItem("java-theme", next ? "dark" : "light");
-                  }}
-                  logout={logout}
                 >
-                  <Progress answered={answered} scores={scores} xp={xp} selectedCourses={selectedCourses} />
+                  <Progress answered={answered} scores={scores} xp={xp} />
                 </Shell>
               </Guard>
             }
@@ -1405,13 +1437,6 @@ function App() {
               <Guard user={user}>
                 <Shell
                   user={user}
-                  dark={dark}
-                  toggleTheme={() => {
-                    const next = !dark;
-                    setDark(next);
-                    localStorage.setItem("java-theme", next ? "dark" : "light");
-                  }}
-                  logout={logout}
                 >
                   <Results />
                 </Shell>
@@ -1424,20 +1449,8 @@ function App() {
               <Guard user={user}>
                 <Shell
                   user={user}
-                  dark={dark}
-                  toggleTheme={() => {
-                    const next = !dark;
-                    setDark(next);
-                    localStorage.setItem("java-theme", next ? "dark" : "light");
-                  }}
-                  logout={logout}
                 >
-                  <Leaderboard
-                    user={user}
-                    xp={xp}
-                    scores={scores}
-                    selectedCourses={selectedCourses}
-                  />
+                  <Leaderboard user={user} xp={xp} scores={scores} />
                 </Shell>
               </Guard>
             }
@@ -1448,15 +1461,32 @@ function App() {
               <Guard user={user}>
                 <Shell
                   user={user}
-                  dark={dark}
-                  toggleTheme={() => {
-                    const next = !dark;
-                    setDark(next);
-                    localStorage.setItem("java-theme", next ? "dark" : "light");
-                  }}
-                  logout={logout}
                 >
-                  <Profile user={user} onUpdate={(nextUser) => setUser(nextUser)} />
+                  <Profile
+                    user={user}
+                    onUpdate={(nextUser) => setUser(nextUser)}
+                    onLogout={logout}
+                  />
+                </Shell>
+              </Guard>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <Guard user={user}>
+                <Shell user={user}>
+                  <Settings
+                    dark={dark}
+                    toggleTheme={() => {
+                      const next = !dark;
+                      setDark(next);
+                      localStorage.setItem(
+                        "java-theme",
+                        next ? "dark" : "light",
+                      );
+                    }}
+                  />
                 </Shell>
               </Guard>
             }
@@ -1472,24 +1502,22 @@ function App() {
 }
 
 function LoadingScreen() {
+  // Logo, progress bar and credit line shown while the app boots.
   return (
     <main className="loading-screen">
       <img src={ctTechLogo} alt="CT TECH logo" />
+      <div
+        className="loading-bar"
+        role="progressbar"
+        aria-label="Loading StudyLab"
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
+        <i />
+      </div>
       <div className="loading-credit">
         Created by <strong>CT TECH</strong>
       </div>
-      <div className="loading-wordmark">
-        Study<span>Lab</span>
-      </div>
-      <div className="loading-skeleton">
-        <i />
-        <i />
-        <i />
-      </div>
-      <div className="loading-line">
-        <i />
-      </div>
-      <p>Loading your learning workspace...</p>
     </main>
   );
 }
@@ -1503,231 +1531,417 @@ function Guard({
 }) {
   return user ? <>{children}</> : <Navigate to="/auth" replace />;
 }
-function Landing({ user }: { user: User | null }) {
-  return (
-    <main className="landing">
-      <nav className="landing-nav">
-        <Link className="logo" to="/">
-          <span>⌘</span> Study<span>Lab</span>
-        </Link>
-        <div>
-          <a href="#method">How it works</a>
-          <a href="#topics">Modules</a>
-          <Link className="button mini" to={user ? "/dashboard" : "/auth"}>
-            {user ? "Open lab" : "Sign in"} →
-          </Link>
-        </div>
-      </nav>
-      <section className="landing-hero">
-        <div>
-          <div className="eyebrow">THE FOCUSED LEARNING LAB</div>
-          <h1>
-            Learn deeply.
-            <br />
-            <em>Think in code.</em>
-          </h1>
-          <p>
-            Questions, quizzes, and coding challenges for the skills you want to
-            build, starting with Java and growing into more modules.
-          </p>
-          <div className="hero-actions">
-            <Link className="button" to={user ? "/dashboard" : "/auth"}>
-              {user ? "Continue practicing" : "Start practicing free"}{" "}
-              <span>→</span>
-            </Link>
-            <span className="trust">✦ Built for students who build things</span>
-          </div>
-        </div>
-        <div className="code-art">
-          <div className="code-window">
-            <div className="dots">
-              ● ● ● <span>Main.java</span>
-            </div>
-            <pre>
-              <i>public class</i> <b>Progress</b> {"{"}
-              {"\n"} <i>int</i> xp = <mark>1240</mark>;{"\n"} <i>boolean</i>{" "}
-              ready = <mark>true</mark>;{"\n"}
-              {"\n"} System.out.println({`"Keep going"`});{"\n"}
-              {"}"}
-            </pre>
-            <div className="terminal">
-              ✓ Tests passing <span>+20 XP</span>
-            </div>
-          </div>
-          <div className="float-stat">
-            <b>86%</b>
-            <small>average accuracy</small>
-          </div>
-        </div>
-      </section>
-      <section id="method" className="method">
-        <div>
-          <span>01</span>
-          <h3>Answer</h3>
-          <p>Short questions turn concepts into active recall.</p>
-        </div>
-        <div>
-          <span>02</span>
-          <h3>Understand</h3>
-          <p>See the correct answer and explanation instantly.</p>
-        </div>
-        <div>
-          <span>03</span>
-          <h3>Build</h3>
-          <p>Apply your thinking in coding challenges.</p>
-        </div>
-      </section>
-      <section id="topics" className="landing-topics">
-        <div className="eyebrow">ONE WORKSPACE. MANY MODULES.</div>
-        <h2>
-          Start with Java,
-          <br />
-          <em>grow from there.</em>
-        </h2>
-        <p>
-          Java is the first module. Calculus and more subjects can be added to
-          the same focused practice workspace.
-        </p>
-        <Link className="text-link" to={user ? "/modules" : "/auth"}>
-          Explore the modules →
-        </Link>
-      </section>
-    </main>
-  );
-}
+
+const OTHER_DEGREE = "Other";
 
 function Auth({ onAuth }: { onAuth: (user: User, token: string) => void }) {
+  const [step, setStep] = useState<"credentials" | "verify">("credentials");
   const [register, setRegister] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [university, setUniversity] = useState("");
   const [degree, setDegree] = useState("");
+  const [customDegree, setCustomDegree] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [codeInput, setCodeInput] = useState("");
+  const [sentCode, setSentCode] = useState("");
+  const [sending, setSending] = useState(false);
   const navigate = useNavigate();
+
+  const usingOtherDegree = degree === OTHER_DEGREE;
+  const finalDegree = usingOtherDegree ? customDegree.trim() : degree;
+
+  // Send a verification code, then move to the code-entry step.
+  const sendCode = async () => {
+    const check = checkStudentEmail(email);
+    if (!check.ok) {
+      setError(check.reason);
+      return;
+    }
+    if (!finalDegree) {
+      setError("Please choose or enter your degree.");
+      return;
+    }
+    setError("");
+    setSending(true);
+    const code = generateVerificationCode();
+    setSentCode(code);
+    const result = await requestVerificationCode(
+      email.trim().toLowerCase(),
+      code,
+    );
+    setNotice(result.message);
+    savePendingVerification({
+      name: name.trim(),
+      email: email.trim().toLowerCase(),
+      password,
+      university: university.trim(),
+      degree: finalDegree,
+      customDegree: usingOtherDegree ? customDegree.trim() : undefined,
+      code,
+      sentAt: Date.now(),
+    });
+    setSending(false);
+    setStep("verify");
+  };
+
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError("");
+    if (!register) {
+      // Sign in: verify the address is allowed, then authenticate.
+      const check = checkStudentEmail(email);
+      if (!check.ok) {
+        setError(check.reason);
+        return;
+      }
+      try {
+        const result = await api<{ user: User; token: string }>(
+          "/api/auth/login",
+          { method: "POST", body: JSON.stringify({ email, password }) },
+        );
+        onAuth(result.user, result.token);
+        navigate("/dashboard");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to sign in");
+      }
+      return;
+    }
     if (!termsAccepted) {
-      setError("Please accept the Terms and Conditions and Privacy Notice to continue.");
+      setError(
+        "Please accept the Terms and Conditions and Privacy Notice to continue.",
+      );
+      return;
+    }
+    await sendCode();
+  };
+
+  // Compare the typed code with the one sent to the student's email.
+  const verifyAndRegister = async () => {
+    setError("");
+    const pending = readPendingVerification();
+    const expected = pending?.code || sentCode;
+    if (!expected) {
+      setError("Request a new verification code.");
+      return;
+    }
+    if (Date.now() - (pending?.sentAt || 0) > CODE_TTL_MS) {
+      setError("That code expired. Request a new one.");
+      return;
+    }
+    if (codeInput.trim() !== expected) {
+      setError(
+        "That verification code is incorrect. Check your email and try again.",
+      );
       return;
     }
     try {
-      const body = register
-        ? { name, email, password, university, degree }
-        : { email, password };
+      await api<{ verified: boolean }>("/api/auth/verify-code", {
+        method: "POST",
+        body: JSON.stringify({
+          email: pending?.email || email,
+          code: codeInput.trim(),
+        }),
+      }).catch(() => ({ verified: true }));
       const result = await api<{ user: User; token: string }>(
-        register ? "/api/auth/register" : "/api/auth/login",
-        { method: "POST", body: JSON.stringify(body) },
+        "/api/auth/register",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            name: pending?.name || name,
+            email: pending?.email || email,
+            password: pending?.password || password,
+            university: pending?.university || university,
+            degree: pending?.degree || finalDegree,
+          }),
+        },
       );
+      clearPendingVerification();
       onAuth(result.user, result.token);
-      navigate("/course-selection");
+      navigate("/dashboard");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to sign in");
+      setError(
+        err instanceof Error ? err.message : "Unable to create the account",
+      );
     }
   };
+
+  const restart = () => {
+    clearPendingVerification();
+    setStep("credentials");
+    setCodeInput("");
+    setNotice("");
+    setError("");
+  };
+
   return (
     <main className="auth">
       <Link className="logo" to="/">
         <span>⌘</span> Study<span>Lab</span>
       </Link>
       <div className="auth-card">
-        <div className="eyebrow">
-          {register ? "START YOUR STREAK" : "WELCOME BACK"}
-        </div>
-        <h1>{register ? "Build your study path." : "Back to the lab."}</h1>
-        <p>
-          {register
-            ? "Tell us where you study so we can recommend relevant modules."
-            : "Sign in to keep your progress moving."}
-        </p>
-        <form onSubmit={submit}>
-          {register && (
-            <>
+        {step === "verify" ? (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void verifyAndRegister();
+            }}
+          >
+            <div className="eyebrow">VERIFY YOUR STUDENT EMAIL</div>
+            <h1>Enter your code.</h1>
+            <p>
+              We sent a 6-digit verification code to <b>{email}</b>. Paste it
+              below to confirm the address is yours.
+            </p>
+            {notice && <div className="auth-notice">{notice}</div>}
+            <div className="auth-demo-code">
+              <span>YOUR VERIFICATION CODE</span>
+              <b>{sentCode}</b>
+              <small>
+                No mail server is connected yet, so your code appears here. Once
+                email delivery is switched on it will arrive in your inbox.
+              </small>
+            </div>
+            <label>
+              Verification code
+              <input
+                required
+                inputMode="numeric"
+                maxLength={6}
+                value={codeInput}
+                onChange={(event) =>
+                  setCodeInput(event.target.value.replace(/\D/g, ""))
+                }
+                placeholder="6-digit code"
+              />
+            </label>
+            {error && <div className="error">{error}</div>}
+            <button className="button full" type="submit">
+              Verify & create account →
+            </button>
+            <div className="verify-actions">
+              <button type="button" className="text-link" onClick={restart}>
+                Use a different email
+              </button>
+              <button
+                type="button"
+                className="text-link"
+                disabled={sending}
+                onClick={() => void sendCode()}
+              >
+                {sending ? "Sending…" : "Resend code"}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <>
+            <div className="eyebrow">
+              {register ? "START YOUR STREAK" : "WELCOME BACK"}
+            </div>
+            <h1>{register ? "Build your study path." : "Back to the lab."}</h1>
+            <p>
+              {register
+                ? "Sign up with your student email. We will email you a code to verify it."
+                : "Sign in with your verified student email to keep your progress moving."}
+            </p>
+            <form onSubmit={submit}>
+              {register && (
+                <>
+                  <label>
+                    Name
+                    <input
+                      required
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    University or college
+                    <input
+                      required
+                      value={university}
+                      onChange={(e) => setUniversity(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Degree or programme
+                    <select
+                      required
+                      value={degree}
+                      onChange={(e) => setDegree(e.target.value)}
+                    >
+                      <option value="">Select your degree</option>
+                      {degreeCatalog.map((option) => (
+                        <option key={option.name}>{option.name}</option>
+                      ))}
+                      <option value={OTHER_DEGREE}>Other degree</option>
+                    </select>
+                  </label>
+                  {usingOtherDegree && (
+                    <label className="custom-degree-field">
+                      Please specify your degree
+                      <input
+                        required
+                        value={customDegree}
+                        onChange={(e) => setCustomDegree(e.target.value)}
+                        placeholder="e.g. Actuarial Science"
+                      />
+                    </label>
+                  )}
+                </>
+              )}
               <label>
-                Name
+                {register ? "Student email" : "Email"}
                 <input
                   required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder={
+                    register
+                      ? "you@student.university.edu"
+                      : "you@student.university.edu"
+                  }
                 />
+                {register && (
+                  <small className="field-hint">
+                    Use your school or university email, not a personal one.
+                  </small>
+                )}
               </label>
               <label>
-                University or college
+                Password
                 <input
                   required
-                  value={university}
-                  onChange={(e) => setUniversity(e.target.value)}
+                  minLength={6}
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                 />
               </label>
-              <label>
-                Degree or programme
-                <select required value={degree} onChange={(e) => setDegree(e.target.value)}>
-                  <option value="">Select your degree</option>
-                  {degreeCatalog.map((option) => <option key={option.name}>{option.name}</option>)}
-                </select>
-              </label>
-            </>
-          )}
-          <label>
-            Email
-            <input
-              required
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </label>
-          <label>
-            Password
-            <input
-              required
-              minLength={6}
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </label>
-          <label className="terms-check">
-            <input type="checkbox" checked={termsAccepted} onChange={(event) => setTermsAccepted(event.target.checked)} />
-            I accept the <a href="/terms" target="_blank" rel="noreferrer">Terms and Conditions</a> and <a href="/privacy" target="_blank" rel="noreferrer">Privacy Notice</a>.
-          </label>
-          {error && <div className="error">{error}</div>}
-          <button className="button full">
-            {register ? "Create account →" : "Sign in →"}
-          </button>
-        </form>
-        <p className="switch">
-          {register ? "Already have an account?" : "New to StudyLab?"}{" "}
-          <button onClick={() => setRegister(!register)}>
-            {register ? "Sign in" : "Create one"}
-          </button>
-        </p>
+              {register && (
+                <label className="terms-check">
+                  <input
+                    type="checkbox"
+                    checked={termsAccepted}
+                    onChange={(event) => setTermsAccepted(event.target.checked)}
+                  />
+                  I accept the <Link to="/terms">Terms and Conditions</Link> and{" "}
+                  <Link to="/privacy">Privacy Notice</Link>.
+                </label>
+              )}
+              {error && <div className="error">{error}</div>}
+              <button className="button full" disabled={sending}>
+                {register
+                  ? sending
+                    ? "Sending code…"
+                    : "Send verification code →"
+                  : "Sign in →"}
+              </button>
+            </form>
+            <p className="switch">
+              {register ? "Already have an account?" : "New to StudyLab?"}{" "}
+              <button
+                onClick={() => {
+                  setRegister(!register);
+                  setError("");
+                }}
+              >
+                {register ? "Sign in" : "Create one"}
+              </button>
+            </p>
+          </>
+        )}
       </div>
     </main>
   );
 }
 
 function LegalPage({ title }: { title: string }) {
-  return <main className="auth"><div className="auth-card legal-page"><div className="eyebrow">STUDYLAB LEGAL</div><h1>{title}</h1><p>StudyLab provides educational practice content for personal learning. You are responsible for checking answers and using the service lawfully.</p><p>Do not submit confidential, copyrighted, or harmful material. Accounts must use accurate information and remain secure. We may store account details and learning activity to provide the service, as described in the Privacy Notice.</p><p>This is a general product notice, not legal advice. Please have a qualified lawyer review these terms for your jurisdiction before relying on them for legal protection.</p><Link className="button" to="/auth">Return to sign in</Link></div></main>;
+  const isAbout = title.toLowerCase().includes("about");
+  const age = founderAge();
+  return (
+    <main className="auth">
+      <div className="auth-card legal-page">
+        <div className="eyebrow">
+          {isAbout ? "ABOUT STUDYLAB" : "STUDYLAB LEGAL"}
+        </div>
+        <h1>{title}</h1>
+        {isAbout ? (
+          <>
+            <p>
+              StudyLab is a focused learning workspace built by CT TECH. It
+              pairs plain-language notes with practice questions and tests drawn
+              from those same notes, so students understand what they are doing
+              rather than just memorising answers.
+            </p>
+            <h3>Who created StudyLab</h3>
+            <p>
+              I am {FOUNDER.name}, the founder of CT TECH. I am {age} years old
+              and I study Computer Science and Mathematics at university. I
+              built StudyLab to help students understand their work more deeply
+              — especially in programming, where the gap between copying code
+              and truly understanding it is where most people get stuck.
+            </p>
+            <p>
+              The plan is simple: start with Java, teach it properly, and keep
+              growing into more subjects over time.
+            </p>
+            <div className="about-facts">
+              <span className="pill">CT TECH</span>
+              <span className="pill">Computer Science and Mathematics</span>
+              <span className="pill">Founder-led</span>
+            </div>
+          </>
+        ) : (
+          <>
+            <p>
+              StudyLab provides educational practice content for personal
+              learning. You are responsible for checking answers and using the
+              service lawfully.
+            </p>
+            <p>
+              Do not submit confidential, copyrighted, or harmful material.
+              Accounts must use accurate information and remain secure. We may
+              store account details and learning activity to provide the
+              service, as described in the Privacy Notice.
+            </p>
+            <p>
+              This is a general product notice, not legal advice. Please have a
+              qualified lawyer review these terms for your jurisdiction before
+              relying on them for legal protection.
+            </p>
+          </>
+        )}
+        <Link className="button" to="/auth">
+          Return to sign in
+        </Link>
+      </div>
+    </main>
+  );
 }
 
 function Shell({
   user,
-  dark,
-  toggleTheme,
-  logout,
   children,
 }: {
   user: User | null;
-  dark: boolean;
-  toggleTheme: () => void;
-  logout: () => void;
   children: React.ReactNode;
 }) {
   const location = useLocation();
-  const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
+  // On desktop the sidebar starts expanded. On a phone it starts closed so the
+  // content gets the full width.
+  const [expanded, setExpanded] = useState(
+    () => typeof window === "undefined" || window.innerWidth > 650,
+  );
+  const [width, setWidth] = useState(240);
+  const dragging = useRef(false);
+  // "My account" is intentionally not listed here: it already lives in the
+  // bottom-of-sidebar profile card.
   const links = [
     ["/dashboard", "⌂", "Dashboard"],
     ["/modules", "◈", "Modules"],
@@ -1736,15 +1950,64 @@ function Shell({
     ["/notes", "✎", "Notes & tips"],
     ["/progress", "◔", "My progress"],
     ["/leaderboard", "♛", "Leaderboard"],
+    ["/settings", "⚙", "Settings"],
   ];
+  // Recompute the streak whenever the route changes (quiz/test completions land
+  // on a new page), without a setState-in-effect round trip.
+  const { streak, bestStreak } = useMemo(() => {
+    void location.pathname;
+    return { streak: getWeekStreak(), bestStreak: getBestWeekStreak() };
+  }, [location.pathname]);
+  const canGoBack = location.pathname !== "/dashboard";
+  // The burger lives inside the sidebar and simply flips it open/closed.
+  const toggleSidebar = () => setExpanded((value) => !value);
+  // On a phone, always close the drawer after choosing a link.
+  const closeOnMobile = () => {
+    if (window.innerWidth <= 650) setExpanded(false);
+  };
+  const startResize = (event: React.PointerEvent) => {
+    event.preventDefault();
+    dragging.current = true;
+    const onMove = (moveEvent: PointerEvent) => {
+      if (!dragging.current) return;
+      const next = Math.min(420, Math.max(180, moveEvent.clientX));
+      setWidth(next);
+    };
+    const onUp = () => {
+      dragging.current = false;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+  const shellStyle = {
+    "--sidebar-width": `${width}px`,
+  } as React.CSSProperties;
+  const shellClasses = ["shell", expanded ? "menu-open" : "sidebar-collapsed"]
+    .filter(Boolean)
+    .join(" ");
+  const sidebarClass = ["sidebar", expanded ? "open" : "closed"]
+    .filter(Boolean)
+    .join(" ");
   return (
-    <div className="shell">
-      <aside className={open ? "sidebar open" : "sidebar"}>
+    <div className={shellClasses} style={shellStyle}>
+      <aside className={sidebarClass}>
         <div className="side-logo">
+          <button
+            className="hamburger sidebar-burger"
+            aria-label={expanded ? "Close menu" : "Open menu"}
+            aria-expanded={expanded}
+            title="Toggle menu"
+            onClick={toggleSidebar}
+          >
+            <span />
+            <span />
+            <span />
+          </button>
           <Link className="logo" to="/dashboard">
             <span>⌘</span> Study<span>Lab</span>
           </Link>
-          <button onClick={() => setOpen(false)}>×</button>
         </div>
         <div className="side-label">WORKSPACE</div>
         <nav>
@@ -1752,7 +2015,7 @@ function Shell({
             <Link
               className={location.pathname === to ? "active" : ""}
               to={to}
-              onClick={() => setOpen(false)}
+              onClick={closeOnMobile}
               key={to}
             >
               <b>{icon}</b>
@@ -1764,31 +2027,64 @@ function Shell({
           <div className="streak">
             <span>♨</span>
             <div>
-              <b>4 day streak</b>
-              <small>+10 XP today</small>
+              <b>
+                {streak} week{streak === 1 ? "" : "s"} streak
+              </b>
+              <small>
+                {hasActivityThisWeek()
+                  ? `Best: ${bestStreak} weeks`
+                  : "Answer a quiz to continue"}
+              </small>
             </div>
           </div>
           <Link className="profile-mini" to="/profile">
-            {user?.picture ? <img src={user.picture} alt="" /> : <i>{user?.name[0]}</i>}
+            {user?.picture ? (
+              <img src={user.picture} alt="" />
+            ) : (
+              <i>{user?.name[0]}</i>
+            )}
             <span>
               <b>{user?.name}</b>
               <small>Student</small>
             </span>
           </Link>
         </div>
+        <div
+          className="sidebar-resizer"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+          onPointerDown={startResize}
+        />
       </aside>
       <div className="main">
         <header>
-          <button className="hamburger" onClick={() => setOpen(true)}>
-            ☰
+          <button
+            className="hamburger header-burger"
+            aria-label={expanded ? "Close menu" : "Open menu"}
+            aria-expanded={expanded}
+            title="Toggle menu"
+            onClick={toggleSidebar}
+          >
+            <span />
+            <span />
+            <span />
           </button>
+          {canGoBack && (
+            <button
+              className="back-button"
+              onClick={() => navigate(-1)}
+              aria-label="Go back"
+              title="Go back"
+            >
+              ← <span>Back</span>
+            </button>
+          )}
           <span className="breadcrumb">
             StudyLab <b>/</b> {location.pathname.slice(1) || "dashboard"}
           </span>
           <div className="header-actions">
-            <button onClick={toggleTheme}>{dark ? "☀" : "◐"}</button>
             <span className="xp-chip">✦ {user ? "Level 4" : ""}</span>
-            <button onClick={logout}>Log out</button>
           </div>
         </header>
         <div className="content">{children}</div>
@@ -1797,241 +2093,135 @@ function Shell({
   );
 }
 
-function CourseSelection({
-  selectedCourses,
-  onChange,
-}: {
-  selectedCourses: string[];
-  onChange: (courses: string[]) => void;
-}) {
-  const navigate = useNavigate();
-  const [query, setQuery] = useState("");
-  const [customCourse, setCustomCourse] = useState("");
-  const visibleCourses = popularCourses.filter(([name, category]) =>
-    `${name} ${category}`.toLowerCase().includes(query.toLowerCase()),
-  );
-  const toggleCourse = (name: string) => {
-    onChange(
-      selectedCourses.includes(name)
-        ? selectedCourses.filter((course) => course !== name)
-        : [...selectedCourses, name],
-    );
-  };
-  const addCustomCourse = (event: React.FormEvent) => {
-    event.preventDefault();
-    const name = customCourse.trim();
-    if (!name) return;
-    onChange([...selectedCourses, name]);
-    setCustomCourse("");
-  };
-  return (
-    <div className="course-selection">
-      <div className="title-row">
-        <div>
-          <div className="eyebrow">YOUR STUDY PATH</div>
-          <h1>Choose your courses.</h1>
-          <p>
-            Pick the subjects you want in your workspace. You can change this
-            list any time.
-          </p>
-        </div>
-        <button className="button" onClick={() => navigate("/dashboard")}>
-          Continue to dashboard <span>→</span>
-        </button>
-      </div>
-      <div className="course-selection-toolbar">
-        <div className="search module-search">
-          <span>⌕</span>
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search 30 popular courses..."
-          />
-        </div>
-        <span className="pill">{selectedCourses.length} selected</span>
-      </div>
-      <div className="course-grid">
-        {visibleCourses.map(([name, category, icon]) => {
-          const selected = selectedCourses.includes(name);
-          return (
-            <button
-              className={selected ? "course-card selected" : "course-card"}
-              onClick={() => toggleCourse(name)}
-              key={name}
-            >
-              <span className="course-icon">{icon}</span>
-              <span>
-                <small>{category}</small>
-                <strong>{name}</strong>
-              </span>
-              <b>{selected ? "✓" : "+"}</b>
-            </button>
-          );
-        })}
-      </div>
-      <section className="panel add-course">
-        <div>
-          <span className="eyebrow">CAN'T FIND IT?</span>
-          <h2>Add another module</h2>
-          <p>Add a course or module that is unique to your programme.</p>
-        </div>
-        <form onSubmit={addCustomCourse}>
-          <input
-            value={customCourse}
-            onChange={(event) => setCustomCourse(event.target.value)}
-            placeholder="e.g. Renewable Energy"
-            aria-label="New course name"
-          />
-          <button className="button" type="submit">
-            Add module
-          </button>
-        </form>
-      </section>
-    </div>
-  );
-}
-
 function Dashboard({
   user,
   answered,
-  xp,
+  scores,
   selectedCourses,
 }: {
   user: User | null;
   answered: string[];
-  xp: number;
+  scores: number[];
   selectedCourses: string[];
 }) {
-  const accuracy = answered.length ? 78 : 0;
-  const nextTopic =
-    topics[Math.min(Math.floor(answered.length / 3), topics.length - 1)];
-  const degree = user?.degree || "your degree";
-  const courseModules = selectedCourses.flatMap((course) =>
-    course === "Calculus" ? ["Calculus", "Integral Calculus"] : course === "Physics" ? ["Physics", "Mechanics"] : [course],
-  );
-  const recommended = courseModules.length ? courseModules.slice(0, 6) : ["Choose a course"];
+  const navigate = useNavigate();
+  // Stats shown here are deliberately different from the ones on My Progress.
+  const bestScore = scores.length ? Math.max(...scores) : 0;
+  const testsTaken = (() => {
+    try {
+      return (
+        JSON.parse(
+          localStorage.getItem("study-test-scores") || "[]",
+        ) as number[]
+      ).length;
+    } catch {
+      return 0;
+    }
+  })();
+  const testsPassed = (() => {
+    try {
+      return (
+        JSON.parse(
+          localStorage.getItem("study-test-scores") || "[]",
+        ) as number[]
+      ).filter((value) => value >= 70).length;
+    } catch {
+      return 0;
+    }
+  })();
+  const subtopicsCovered = topics.filter((topic) =>
+    javaQuestionBank.some((q) => q.topic === topic && answered.includes(q.id)),
+  ).length;
+  const [pick, setPick] = useState<string>("random");
+  const startQuiz = () => {
+    const topic =
+      pick === "random"
+        ? topics[Math.floor(Math.random() * topics.length)]
+        : pick;
+    navigate(`/quiz/${encodeURIComponent(topic)}`);
+  };
   return (
     <>
-      <div className="title-row">
+      <div className="title-row dashboard-hero">
         <div>
           <div className="eyebrow">YOUR STUDY WORKSPACE</div>
           <h1>
             Welcome, {user?.name || "student"} <em>✦</em>
           </h1>
-          <p>Here are the modules connected to {degree}.</p>
+          <p>Here is how your Java learning is going.</p>
         </div>
-        <Link className="button" to={`/quiz/${nextTopic}`}>
-          Start a quiz <span>→</span>
-        </Link>
       </div>
-      <div className="dashboard-modules panel">
-        <div className="panel-head">
+      {!selectedCourses.length && (
+        <section className="panel dashboard-course-prompt">
+          <span className="dashboard-course-icon">✦</span>
           <div>
-            <span className="eyebrow">RECOMMENDED FOR YOUR DEGREE</span>
-            <h2>{degree}</h2>
+            <b>Add the courses you are studying</b>
+            <p>
+              Pick your modules so StudyLab can tailor the dashboard to your
+              programme.
+            </p>
           </div>
-          <Link to="/modules">Browse all →</Link>
+          <Link className="button" to="/course-selection">
+            Choose courses <span>→</span>
+          </Link>
+        </section>
+      )}
+      <section className="panel new-quiz-panel">
+        <div className="new-quiz-copy">
+          <span className="eyebrow">READY TO PRACTISE</span>
+          <h2>Start a new quiz</h2>
+          <p>
+            Pick a Java sub-topic or let StudyLab choose a random one for you.
+          </p>
         </div>
-        <div className="dashboard-module-list">
-        {recommended.map((name) => (
-            <span className="pill" key={name}>
-              {name}
-            </span>
-          ))}
+        <div className="new-quiz-controls">
+          <select
+            className="new-quiz-select"
+            value={pick}
+            onChange={(event) => setPick(event.target.value)}
+            aria-label="Choose a Java sub-topic"
+          >
+            <option value="random">Random sub-topic</option>
+            {topics.map((topic) => (
+              <option key={topic} value={topic}>
+                {topic}
+              </option>
+            ))}
+          </select>
+          <button className="button" onClick={startQuiz}>
+            Start quiz <span>→</span>
+          </button>
         </div>
-      </div>
-      <div className="focus-banner">
-        <div className="focus-icon">⌘</div>
-        <div>
-          <span className="eyebrow">RECOMMENDED NEXT</span>
-          <h2>{nextTopic}</h2>
-          <p>24 questions available · mixed difficulty · +50 XP</p>
-        </div>
-        <Link className="button mini" to={`/quiz/${nextTopic}`}>
-          Practice now →
-        </Link>
-      </div>
+      </section>
       <div className="stats">
         <Stat
           icon="◈"
-          label="Questions answered"
-          value={String(answered.length)}
-          detail="+12 this week"
+          label="Sub-topics covered"
+          value={`${subtopicsCovered}/${topics.length}`}
+          detail="Java sub-topics"
           color="purple"
         />
         <Stat
           icon="◎"
-          label="Accuracy"
-          value={`${accuracy}%`}
-          detail="Keep pushing"
+          label="Best score"
+          value={`${bestScore}%`}
+          detail={scores.length ? `${scores.length} quizzes` : "No quizzes yet"}
           color="green"
         />
         <Stat
-          icon="✦"
-          label="Total XP"
-          value={xp.toLocaleString()}
-          detail="Level 4 · Builder"
-          color="orange"
-        />
-        <Stat
-          icon="♨"
-          label="Current streak"
-          value="4 days"
-          detail="Best: 12 days"
+          icon="◷"
+          label="Tests taken"
+          value={String(testsTaken)}
+          detail="20-question tests"
           color="blue"
         />
-      </div>
-      <div className="dashboard-grid">
-        <section className="panel">
-          <div className="panel-head">
- <div>
-              <span className="eyebrow">YOUR SELECTED MODULES</span>
-              <h2>Topics to master</h2>
-            </div>
-            <Link to="/modules">See all modules →</Link>
-          </div>
-          {topics.slice(0, 5).map((topic, i) => (
-            <div className="topic-line" key={topic}>
-              <span className={`topic-icon t${i}`}>{topicIcons[i]}</span>
-              <div>
-                <b>{topic}</b>
-                <small>
-                  {answered.filter((id) => id.startsWith(`${i}-`)).length}/24
-                  questions answered
-                </small>
-              </div>
-              <div className="tiny-bar">
-                <i
-                  style={{
-                    width: `${(answered.filter((id) => id.startsWith(`${i}-`)).length / 24) * 100}%`,
-                  }}
-                />
-              </div>
-              <Link to={`/quiz/${topic}`}>→</Link>
-            </div>
-          ))}
-        </section>
-        <section className="panel activity">
-          <div className="panel-head">
-            <div>
-              <span className="eyebrow">QUIZ HISTORY</span>
-              <h2>Recent practice</h2>
-            </div>
-            <Link to="/progress">View all →</Link>
-          </div>
-          {["Operators", "Loops", "Methods"].map((item, i) => (
-            <div className="history-line" key={item}>
-              <span className="history-check">{i === 0 ? "✓" : "◌"}</span>
-              <div>
-                <b>{item} checkpoint</b>
-                <small>
-                  {i === 0 ? "Completed today" : "Ready to practice"}
-                </small>
-              </div>
-              <strong>{i === 0 ? "86%" : "—"}</strong>
-            </div>
-          ))}
-        </section>
+        <Stat
+          icon="✦"
+          label="Tests passed"
+          value={String(testsPassed)}
+          detail="70% or higher"
+          color="orange"
+        />
       </div>
     </>
   );
@@ -2079,10 +2269,14 @@ function Modules({
     return <PhysicsTopics onBack={() => setSearchParams({})} />;
   if (selectedModule === "calculus")
     return <CalculusTopics onBack={() => setSearchParams({})} />;
-  const filtered = moduleCatalog.filter((module) =>
-    `${module.name} ${module.category}`
-      .toLowerCase()
-      .includes(query.toLowerCase()),
+  // Only modules flagged `visible` are shown. The others stay defined in the
+  // catalog (nothing is deleted) so they can be switched on again later.
+  const filtered = moduleCatalog.filter(
+    (module) =>
+      module.visible &&
+      `${module.name} ${module.category}`
+        .toLowerCase()
+        .includes(query.toLowerCase()),
   );
   const categories = [...new Set(filtered.map((module) => module.category))];
   return (
@@ -2096,8 +2290,16 @@ function Modules({
           </p>
         </div>
         <span className="pill">
-          {moduleCatalog.filter((module) => module.active).length} ACTIVE ·{" "}
-          {moduleCatalog.filter((module) => !module.active).length} COMING SOON
+          {
+            moduleCatalog.filter((module) => module.visible && module.active)
+              .length
+          }{" "}
+          ACTIVE ·{" "}
+          {
+            moduleCatalog.filter((module) => module.visible && !module.active)
+              .length
+          }{" "}
+          COMING SOON
         </span>
       </div>
       <div className="search module-search">
@@ -2179,9 +2381,7 @@ function Modules({
         <span>✦</span>
         <p>
           Studying something else?{" "}
-          <Link to="/course-selection">
-            Add more modules to your workspace
-          </Link>
+          <Link to="/course-selection">Add more modules to your workspace</Link>
           . Your {selectedCourses.length} selected course
           {selectedCourses.length === 1 ? "" : "s"} stay in one place.
         </p>
@@ -2246,7 +2446,12 @@ function JavaTopics({
                   }}
                 />
               </div>
-              <Link to={`/quiz/${topic}`} onClick={(event) => event.stopPropagation()}>Practice →</Link>
+              <Link
+                to={`/quiz/${topic}`}
+                onClick={(event) => event.stopPropagation()}
+              >
+                Practice →
+              </Link>
             </div>
           </article>
         ))}
@@ -2287,15 +2492,21 @@ function PhysicsTopics({ onBack }: { onBack: () => void }) {
       <div className="topic-grid">
         {visible.map(({ topic, index }) => (
           <article className="topic-card" key={topic}>
-            <div className={`topic-icon t${index}`}>{physicsTopicIcons[index]}</div>
+            <div className={`topic-icon t${index}`}>
+              {physicsTopicIcons[index]}
+            </div>
             <div className="topic-card-head">
-              <span className="eyebrow">MECHANICS TOPIC {String(index + 1).padStart(2, "0")}</span>
+              <span className="eyebrow">
+                MECHANICS TOPIC {String(index + 1).padStart(2, "0")}
+              </span>
               <span>3 questions</span>
             </div>
             <h2>{topic}</h2>
             <p>{physicsTopicDescriptions[index]}</p>
             <div className="topic-card-foot">
-              <div className="tiny-bar"><i style={{ width: "0%" }} /></div>
+              <div className="tiny-bar">
+                <i style={{ width: "0%" }} />
+              </div>
               <Link to={`/quiz/${topic}`}>Practice →</Link>
             </div>
           </article>
@@ -2306,10 +2517,16 @@ function PhysicsTopics({ onBack }: { onBack: () => void }) {
         <div>
           <strong>Mechanics is ready to explore</strong>
           <p>
-            Review motion, forces, energy, levers, pulleys, and mechanical advantage in one focused module.
+            Review motion, forces, energy, levers, pulleys, and mechanical
+            advantage in one focused module.
           </p>
         </div>
-        <Link className="text-link" to="/notes?category=Physics&module=Mechanics">Read tips →</Link>
+        <Link
+          className="text-link"
+          to="/notes?category=Physics&module=Mechanics"
+        >
+          Read tips →
+        </Link>
       </div>
     </>
   );
@@ -2328,9 +2545,14 @@ function CalculusTopics({ onBack }: { onBack: () => void }) {
         <div>
           <div className="eyebrow">MAT1141 CALCULUS MODULE</div>
           <h1>Master calculus.</h1>
-          <p>Follow the complete sequence from the supplied MAT1141 notes, from functions and limits through differentiation and applications.</p>
+          <p>
+            Follow the complete sequence from the supplied MAT1141 notes, from
+            functions and limits through differentiation and applications.
+          </p>
         </div>
-        <button className="button secondary" onClick={onBack}>← All modules</button>
+        <button className="button secondary" onClick={onBack}>
+          ← All modules
+        </button>
       </div>
       <div className="search">
         <span>⌕</span>
@@ -2349,7 +2571,10 @@ function CalculusTopics({ onBack }: { onBack: () => void }) {
           <div>
             <span className="eyebrow">FORMULA REFERENCE</span>
             <h2>Essential calculus equations</h2>
-            <p>Use these formulas alongside the MAT1141 notes. Check the conditions and domain before applying a shortcut.</p>
+            <p>
+              Use these formulas alongside the MAT1141 notes. Check the
+              conditions and domain before applying a shortcut.
+            </p>
           </div>
         </div>
         <div className="equation-grid">
@@ -2364,24 +2589,36 @@ function CalculusTopics({ onBack }: { onBack: () => void }) {
       <div className="topic-grid">
         {visible.map(({ topic, index }) => (
           <article
-            className={selectedTopic === topic ? "topic-card selected" : "topic-card"}
+            className={
+              selectedTopic === topic ? "topic-card selected" : "topic-card"
+            }
             key={topic}
-            onClick={() => setSelectedTopic((current) => current === topic ? null : topic)}
+            onClick={() =>
+              setSelectedTopic((current) => (current === topic ? null : topic))
+            }
           >
-            <div className={`topic-icon t${index % 6}`}>{calculusTopicIcons[index]}</div>
+            <div className={`topic-icon t${index % 6}`}>
+              {calculusTopicIcons[index]}
+            </div>
             <div className="topic-card-head">
-              <span className="eyebrow">CALCULUS TOPIC {String(index + 1).padStart(2, "0")}</span>
+              <span className="eyebrow">
+                CALCULUS TOPIC {String(index + 1).padStart(2, "0")}
+              </span>
               <span>24 questions</span>
             </div>
             <h2>{topic}</h2>
             <p>{calculusTopicDescriptions[index]}</p>
             <div className="topic-card-foot">
-              <div className="tiny-bar"><i style={{ width: "0%" }} /></div>
+              <div className="tiny-bar">
+                <i style={{ width: "0%" }} />
+              </div>
               <Link to={`/quiz/${topic}`}>Practice →</Link>
             </div>
             {selectedTopic === topic && (
               <div className="topic-exercises">
-                <span className="eyebrow">TOPIC EXERCISES · TAP TO COLLAPSE</span>
+                <span className="eyebrow">
+                  TOPIC EXERCISES · TAP TO COLLAPSE
+                </span>
                 {calculusExercises
                   .filter((exercise) => exercise.topic === topic)
                   .map((exercise) => {
@@ -2394,12 +2631,22 @@ function CalculusTopics({ onBack }: { onBack: () => void }) {
                           className="text-link"
                           onClick={(event) => {
                             event.stopPropagation();
-                            setRevealedExercises((current) => revealed ? current.filter((item) => item !== exerciseIndex) : [...current, exerciseIndex]);
+                            setRevealedExercises((current) =>
+                              revealed
+                                ? current.filter(
+                                    (item) => item !== exerciseIndex,
+                                  )
+                                : [...current, exerciseIndex],
+                            );
                           }}
                         >
                           {revealed ? "Hide answer" : "Reveal answer"}
                         </button>
-                        {revealed && <div className="exercise-answer"><strong>Answer:</strong> {exercise.answer}</div>}
+                        {revealed && (
+                          <div className="exercise-answer">
+                            <strong>Answer:</strong> {exercise.answer}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -2410,7 +2657,11 @@ function CalculusTopics({ onBack }: { onBack: () => void }) {
       </div>
       <div className="physics-note panel">
         <span className="course-icon">∫</span>
-        <p><strong>Use the notes as your roadmap.</strong> Work from definitions to examples, keep your domain restrictions visible, and check every derivative or limit against the conditions in the MAT1141 material.</p>
+        <p>
+          <strong>Use the notes as your roadmap.</strong> Work from definitions
+          to examples, keep your domain restrictions visible, and check every
+          derivative or limit against the conditions in the MAT1141 material.
+        </p>
       </div>
     </>
   );
@@ -2422,17 +2673,21 @@ function Quiz({
   onFinish: (score: number, xp: number, ids: string[]) => void;
 }) {
   const { topic } = useParams();
-  const navigate = useNavigate();
   const [difficulty, setDifficulty] = useState<Difficulty | "Mixed">("Mixed");
-  const pool = useMemo(
-    () =>
-      allQuestions.filter(
-        (q) =>
-          q.topic === topic &&
-          (difficulty === "Mixed" || q.difficulty === difficulty),
-      ),
-    [topic, difficulty],
-  );
+  const note = topic ? findNote(topic) : undefined;
+  const pool = useMemo(() => {
+    // Java sub-topics use the 100-question bank so practice lines up with the
+    // notes. Other subjects (Physics, Calculus) fall back to the shared list.
+    const source = javaQuestionBank.some((q) => q.topic === topic)
+      ? javaQuestionBank
+      : allQuestions;
+    return source.filter(
+      (q) =>
+        q.topic === topic &&
+        q.options.length > 0 &&
+        (difficulty === "Mixed" || q.difficulty === difficulty),
+    );
+  }, [topic, difficulty]);
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);
   const [writtenAnswer, setWrittenAnswer] = useState("");
@@ -2440,6 +2695,12 @@ function Quiz({
   const [results, setResults] = useState<boolean[]>([]);
   const [challengeCode, setChallengeCode] = useState("");
   const [hardSeconds, setHardSeconds] = useState(600);
+  // Which option the student picked for each question id, so the final review
+  // can show their answer next to the correct one.
+  const [pickByQuestion, setPickByQuestion] = useState<Record<string, number>>(
+    {},
+  );
+  const [reviewMode, setReviewMode] = useState(false);
   const hard = difficulty === "Hard";
   useEffect(() => {
     if (!hard || submitted || hardSeconds <= 0) return;
@@ -2450,9 +2711,17 @@ function Quiz({
     return () => window.clearInterval(timer);
   }, [hard, submitted, hardSeconds]);
   const q = pool[index] || questions[0];
+  // A hard question is shown as the legacy code project only when it has no
+  // answer options. Bank hard questions are multiple-choice and render normally.
+  const hardProject =
+    hard && q.options.length === 0 && q.kind !== "written answer";
   const writtenHard = hard && q.kind === "written answer";
   const written = !hard && q.difficulty === "Medium";
-  const project = hardChallenges.find((challenge) => challenge.topic === topic) || {
+  const multipleChoice =
+    !written && !writtenHard && !hardProject && q.options.length > 0;
+  const project = hardChallenges.find(
+    (challenge) => challenge.topic === topic,
+  ) || {
     title: `${topic} quick model`,
     prompt: q.prompt,
     requirement:
@@ -2464,21 +2733,27 @@ function Quiz({
     ],
   };
   const submit = () => {
-    if (hard && writtenHard && !writtenAnswer.trim()) return;
-    if (hard && !writtenHard && !challengeCode.trim()) return;
+    if (writtenHard && !writtenAnswer.trim()) return;
+    if (hardProject && !challengeCode.trim()) return;
     if (written && !writtenAnswer.trim()) return;
-    if (!hard && !written && selected === null) return;
+    if (multipleChoice && selected === null) return;
     if (submitted) {
-      const correct = hard
-        ? writtenHard
-          ? writtenAnswer.trim().toLowerCase().includes(q.textAnswer?.toLowerCase() || "show")
-          : challengeCode.includes("class") && challengeCode.includes("main")
-        : written
-          ? writtenAnswer.trim().toLowerCase().replace(/\s+/g, "") ===
-            q.textAnswer?.toLowerCase().replace(/\s+/g, "")
-          : selected === q.answer;
+      const correct = writtenHard
+        ? writtenAnswer
+            .trim()
+            .toLowerCase()
+            .includes(q.textAnswer?.toLowerCase() || "show")
+        : hardProject
+          ? challengeCode.includes("class") && challengeCode.includes("main")
+          : written
+            ? writtenAnswer.trim().toLowerCase().replace(/\s+/g, "") ===
+              q.textAnswer?.toLowerCase().replace(/\s+/g, "")
+            : selected === q.answer;
       const next = [...results, correct];
       setResults(next);
+      if (multipleChoice && selected !== null) {
+        setPickByQuestion((current) => ({ ...current, [q.id]: selected }));
+      }
       setSelected(null);
       setWrittenAnswer("");
       setChallengeCode("");
@@ -2489,24 +2764,145 @@ function Quiz({
           25 + next.filter(Boolean).length * 10,
           pool.map((item) => item.id),
         );
-        navigate("/results", {
-          state: {
-            score: Math.round(
-              (next.filter(Boolean).length / next.length) * 100,
-            ),
-            total: next.length,
-          },
-        });
+        setReviewMode(true);
       } else setIndex(index + 1);
     } else setSubmitted(true);
   };
-  const isCorrect = hard
-    ? writtenHard
-      ? writtenAnswer.trim().toLowerCase().includes(q.textAnswer?.toLowerCase() || "show")
-      : challengeCode.includes("class") && challengeCode.includes("main")
-    : written
-      ? writtenAnswer.trim().toLowerCase().replace(/\s+/g, "") === q.textAnswer?.toLowerCase().replace(/\s+/g, "")
-      : selected === q.answer;
+  const isCorrect = writtenHard
+    ? writtenAnswer
+        .trim()
+        .toLowerCase()
+        .includes(q.textAnswer?.toLowerCase() || "show")
+    : hardProject
+      ? challengeCode.includes("class") && challengeCode.includes("main")
+      : written
+        ? writtenAnswer.trim().toLowerCase().replace(/\s+/g, "") ===
+          q.textAnswer?.toLowerCase().replace(/\s+/g, "")
+        : selected === q.answer;
+
+  // -----------------------------------------------------------------------
+  // Final review — shown once every question in this quiz has been attempted.
+  // -----------------------------------------------------------------------
+  if (reviewMode) {
+    const correctCount = results.filter(Boolean).length;
+    const score = results.length
+      ? Math.round((correctCount / results.length) * 100)
+      : 0;
+    return (
+      <div className="timed-test test-review">
+        <div className="review-hero panel">
+          <div className="eyebrow">
+            {(topic || "Java").toUpperCase()} · REVIEW
+          </div>
+          <h1>{score >= 70 ? "Strong work." : "Let's fix the gaps."}</h1>
+          <div className="review-score">
+            <b>{score}%</b>
+            <span>
+              {correctCount} of {results.length} correct
+            </span>
+          </div>
+          <p>
+            {correctCount === results.length
+              ? "Every answer was correct. Try another difficulty for a fresh set of questions."
+              : `You missed ${results.length - correctCount} question${results.length - correctCount === 1 ? "" : "s"}. Each one is explained below so you can see exactly why the right answer is right.`}
+          </p>
+          <div className="review-actions">
+            <Link
+              className="button"
+              to={`/quiz/${encodeURIComponent(topic ?? "")}`}
+            >
+              Retry this quiz <span>→</span>
+            </Link>
+            {note && (
+              <Link
+                className="button secondary"
+                to={`/notes?category=Java&module=${encodeURIComponent(note.subtopic)}`}
+              >
+                Re-read the notes
+              </Link>
+            )}
+          </div>
+        </div>
+
+        <div className="review-list">
+          {pool.map((question, questionIndex) => {
+            const chosen = pickByQuestion[question.id];
+            const wasCorrect = chosen === question.answer;
+            const questionNote = findNote(question.topic);
+            return (
+              <section
+                className={
+                  wasCorrect
+                    ? "panel review-card correct"
+                    : "panel review-card wrong"
+                }
+                key={question.id}
+              >
+                <div className="review-card-head">
+                  <span className="review-index">Q{questionIndex + 1}</span>
+                  <span
+                    className={`difficulty ${question.difficulty.toLowerCase()}`}
+                  >
+                    {question.difficulty}
+                  </span>
+                  <span
+                    className={
+                      wasCorrect ? "review-badge ok" : "review-badge bad"
+                    }
+                  >
+                    {wasCorrect ? "Correct ✓" : "Incorrect ✗"}
+                  </span>
+                </div>
+                <h2>{question.prompt}</h2>
+                {question.code && (
+                  <pre className="question-code">{question.code}</pre>
+                )}
+                <div className="review-options">
+                  {question.options.map((option, optionIndex) => {
+                    const isAnswer = optionIndex === question.answer;
+                    const isChosen = optionIndex === chosen;
+                    const classes = ["review-option"];
+                    if (isAnswer) classes.push("is-correct");
+                    if (isChosen && !isAnswer) classes.push("is-wrong");
+                    return (
+                      <div className={classes.join(" ")} key={option}>
+                        <span className="review-letter">
+                          {String.fromCharCode(65 + optionIndex)}
+                        </span>
+                        <span className="review-option-text">{option}</span>
+                        {isAnswer && <em>Correct answer</em>}
+                        {isChosen && !isAnswer && <em>Your answer</em>}
+                        {isChosen && isAnswer && <em>You chose this</em>}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="review-note">
+                  <b>
+                    {wasCorrect
+                      ? "Why this is correct"
+                      : chosen === undefined
+                        ? "You skipped this question"
+                        : `Why "${question.options[chosen]}" is not the answer`}
+                  </b>
+                  <span>{question.explanation}</span>
+                </div>
+                {questionNote && (
+                  <Link
+                    className="text-link review-note-link"
+                    to={`/notes?category=Java&module=${encodeURIComponent(questionNote.subtopic)}`}
+                  >
+                    Re-read the {questionNote.subtopic} notes →
+                  </Link>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       <div className="quiz-header">
@@ -2516,6 +2912,14 @@ function Quiz({
           </Link>
           <div className="eyebrow">JAVA MODULE · QUIZ</div>
           <h1>{topic} practice</h1>
+          {note && (
+            <Link
+              className="text-link quiz-note-link"
+              to={`/notes?category=Java&module=${encodeURIComponent(note.subtopic)}`}
+            >
+              ← Read the {note.subtopic} notes first
+            </Link>
+          )}
         </div>
         <div className="score-box">
           <span>Score</span>
@@ -2558,11 +2962,17 @@ function Quiz({
             <span className={`difficulty ${q.difficulty.toLowerCase()}`}>
               {q.difficulty}
             </span>
-            <span>{hard ? "mini project" : q.kind.replace("-", " ")}</span>
-            <span>{hard ? `${Math.floor(hardSeconds / 60)}:${String(hardSeconds % 60).padStart(2, "0")}` : "+40 XP"}</span>
+            <span>
+              {hardProject ? "mini project" : q.kind.replace("-", " ")}
+            </span>
+            <span>
+              {hardProject
+                ? `${Math.floor(hardSeconds / 60)}:${String(hardSeconds % 60).padStart(2, "0")}`
+                : "+40 XP"}
+            </span>
           </div>
-          <h2>{hard && !writtenHard ? project?.prompt : q.prompt}</h2>
-          {hard && writtenHard ? (
+          <h2>{hardProject ? project?.prompt : q.prompt}</h2>
+          {writtenHard ? (
             <textarea
               className="written-answer"
               disabled={submitted}
@@ -2570,7 +2980,7 @@ function Quiz({
               onChange={(event) => setWrittenAnswer(event.target.value)}
               placeholder="Show your complete working here..."
             />
-          ) : hard ? (
+          ) : hardProject ? (
             <>
               <div className="project-brief">
                 <strong>{project?.title}</strong>
@@ -2621,24 +3031,20 @@ function Quiz({
             </>
           )}
           {submitted && (
-            <div
-              className={
-                hard && isCorrect
-                  ? "feedback good"
-                  : isCorrect
-                    ? "feedback good"
-                    : "feedback bad"
-              }
-            >
+            <div className={isCorrect ? "feedback good" : "feedback bad"}>
               <b>
-                {hard
-                  ? writtenHard ? (isCorrect ? "Working submitted" : `Expected: ${q.textAnswer}`) : "Project submitted"
-                  : isCorrect
-                    ? "Correct answer"
-                    : `Correct answer: ${written ? q.textAnswer : q.options[q.answer]}`}
+                {writtenHard
+                  ? isCorrect
+                    ? "Working submitted"
+                    : `Expected: ${q.textAnswer}`
+                  : hardProject
+                    ? "Project submitted"
+                    : isCorrect
+                      ? "Correct answer"
+                      : `Correct answer: ${written ? q.textAnswer : q.options[q.answer]}`}
               </b>
               <span>
-                {hard && !writtenHard
+                {hardProject
                   ? "Your code was submitted. Make sure it satisfies every project requirement before moving on."
                   : q.explanation}
               </span>
@@ -2647,11 +3053,13 @@ function Quiz({
           <button
             className="button submit"
             disabled={
-              hard
-                ? writtenHard ? !writtenAnswer.trim() : !challengeCode.trim()
-                : written
-                  ? !writtenAnswer.trim()
-                  : selected === null
+              writtenHard
+                ? !writtenAnswer.trim()
+                : hardProject
+                  ? !challengeCode.trim()
+                  : written
+                    ? !writtenAnswer.trim()
+                    : selected === null
             }
             onClick={submit}
           >
@@ -2659,50 +3067,75 @@ function Quiz({
               ? index === pool.length - 1
                 ? "Finish & see results"
                 : "Next challenge"
-              : hard
+              : hardProject || writtenHard
                 ? "Submit project"
                 : "Submit answer"}{" "}
             <span>→</span>
           </button>
         </main>
         <aside className="quiz-aside panel">
-          <span className="eyebrow">HARD MODE</span>
-          <h3>Build in 10 minutes.</h3>
-          <p>
-            Every hard question is a practical mini-project sized for a
-            focused ten-minute session. Read the brief, implement it from
-            scratch, and submit a complete Java class.
-          </p>
-          <div className="quiz-rule">
-            <b>⌘</b>
-            <span>
-              <strong>Project brief</strong>
-              <small>
-                Requirements and deliverables are shown beside the editor
-              </small>
-            </span>
-          </div>
-          <div className="quiz-rule">
-            <b>✦</b>
-            <span>
-              <strong>Earn 40 XP</strong>
-              <small>For every completed challenge</small>
-            </span>
-          </div>
+          {hardProject || writtenHard ? (
+            <>
+              <span className="eyebrow">HARD MODE</span>
+              <h3>Build in 10 minutes.</h3>
+              <p>
+                Some hard questions are practical mini-projects. Read the brief,
+                implement it from scratch, and submit a complete Java class.
+              </p>
+              <div className="quiz-rule">
+                <b>⌘</b>
+                <span>
+                  <strong>Project brief</strong>
+                  <small>
+                    Requirements and deliverables are shown beside the editor
+                  </small>
+                </span>
+              </div>
+              <div className="quiz-rule">
+                <b>✦</b>
+                <span>
+                  <strong>Earn 40 XP</strong>
+                  <small>For every completed challenge</small>
+                </span>
+              </div>
+            </>
+          ) : (
+            <>
+              <span className="eyebrow">STUDY LINK</span>
+              <h3>Read the notes first.</h3>
+              <p>
+                These questions are written from the same notes as your study
+                cards. If a question feels hard, the answer is in the notes —
+                especially the “common traps” section.
+              </p>
+              {note && (
+                <Link
+                  className="button secondary mini quiz-aside-link"
+                  to={`/notes?category=Java&module=${encodeURIComponent(note.subtopic)}`}
+                >
+                  Open {note.subtopic} notes <span>→</span>
+                </Link>
+              )}
+              <div className="quiz-rule">
+                <b>✦</b>
+                <span>
+                  <strong>Earn 40 XP</strong>
+                  <small>For every correct answer</small>
+                </span>
+              </div>
+            </>
+          )}
         </aside>
       </div>
     </>
   );
 }
 
+const HELLO_WORLD_CODE =
+  'public class Main {\n  public static void main(String[] args) {\n    System.out.println("Hello, World!");\n  }\n}';
+
 function Practice() {
-  const [module, setModule] = useState("Java");
-  const [calculusAnswer, setCalculusAnswer] = useState("");
-  const [calculusChecked, setCalculusChecked] = useState(false);
-  const calculusPracticeQuestion = calculusQuestions.find((question) => question.difficulty === "Medium") || calculusQuestions[0];
-  const [code, setCode] = useState(
-    "public class Main {\\n  public static void main(String[] args) {\\n    int[] scores = {82, 91, 76};\\n    double total = 0;\\n    for (int score : scores) total += score;\\n    System.out.println(total / scores.length);\\n  }\\n}",
-  );
+  const [code, setCode] = useState(HELLO_WORLD_CODE);
   const [output, setOutput] = useState(
     "Run your Java program to see real output.",
   );
@@ -2735,291 +3168,67 @@ function Practice() {
     <>
       <div className="title-row">
         <div>
-          <div className="eyebrow">CROSS-MODULE PRACTICE</div>
+          <div className="eyebrow">JAVA PRACTICE LAB</div>
           <h1>Practice lab.</h1>
-          <p>
-            Choose a module and work hands-on. More labs will appear here as
-            modules are released.
-          </p>
+          <p>Write real Java and run it. Your output comes live from javac.</p>
         </div>
-        <select
-          className="module-select"
-          value={module}
-          onChange={(event) => setModule(event.target.value)}
-        >
-          <option>Java</option>
-          <option>Calculus</option>
-          <option disabled>JavaScript · coming soon</option>
-          <option disabled>Python · coming soon</option>
-        </select>
+        <Link className="button secondary" to="/notes">
+          Read the notes first <span>→</span>
+        </Link>
       </div>
-      {module === "Calculus" ? (
-        <section className="panel calculus-practice-card">
-          <span className="eyebrow">CALCULUS · FILL IN THE ANSWER</span>
-          <h2>{calculusPracticeQuestion.topic}</h2>
-          <p>{calculusPracticeQuestion.prompt}</p>
-          <input aria-label="Calculus answer" className="written-answer" value={calculusAnswer} disabled={calculusChecked} onChange={(event) => setCalculusAnswer(event.target.value)} placeholder="Type your answer here" />
-          <button className="button" disabled={!calculusAnswer.trim() || calculusChecked} onClick={() => setCalculusChecked(true)}>Check answer</button>
-          {calculusChecked && <div className={calculusAnswer.trim().toLowerCase() === calculusPracticeQuestion.textAnswer?.toLowerCase() ? "feedback good" : "feedback bad"}>
-            <b>{calculusAnswer.trim().toLowerCase() === calculusPracticeQuestion.textAnswer?.toLowerCase() ? "Correct ✓" : `Answer: ${calculusPracticeQuestion.textAnswer}`}</b>
-            <span>{calculusPracticeQuestion.explanation}</span>
-          </div>}
-        </section>
-      ) : module === "Java" ? (
-        <>
-          <div className="challenge-bar">
-            <div>
-              <span className="eyebrow">EXERCISE · +40 XP</span>
-              <h2>Calculate an average</h2>
-              <p>
-                Complete the TODO so the program prints <code>83.0</code>.
-              </p>
-            </div>
-            <button
-              className="button mini"
-              onClick={() => setChallengeDone(true)}
-            >
-              {challengeDone
-                ? "Challenge complete ✓"
-                : "Mark challenge complete"}
-            </button>
+      <>
+        <div className="challenge-bar">
+          <div>
+            <span className="eyebrow">EXERCISE · +40 XP</span>
+            <h2>Say hello in Java</h2>
+            <p>
+              Run the starter program so it prints <code>Hello, World!</code>.
+            </p>
           </div>
-          <div className="editor-grid">
-            <section className="editor panel">
-              <div className="editor-head">
-                <span>● ● ● &nbsp; Main.java</span>
-                <div>
-                  <button
-                    onClick={() =>
-                      setCode(
-                        "public class Main {\\n  public static void main(String[] args) {\\n    int[] scores = {82, 91, 76};\\n    // Find the average score\\n  }\\n}",
-                      )
-                    }
-                  >
-                    Reset
-                  </button>
-                  <button className="run" disabled={running} onClick={runCode}>
-                    {running ? "Compiling..." : "▶ Run Java"}
-                  </button>
-                </div>
-              </div>
-              <textarea
-                spellCheck={false}
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-              />
-            </section>
-            <section className="output panel">
-              <div className="output-head">
-                OUTPUT <span>● {running ? "running" : "ready"}</span>
-              </div>
-              <pre>{output}</pre>
-              <small>
-                Output comes from javac and java on the server, including
-                compiler errors.
-              </small>
-            </section>
-          </div>
-          <div className="mistake-row panel">
-            <span className="history-check">◌</span>
-            <div>
-              <b>Practice mistakes</b>
-              <p>Questions you miss are collected here for focused review.</p>
-            </div>
-            <Link to="/quiz/Java Basics">Review mistakes →</Link>
-          </div>
-        </>
-      ) : (
-        <div className="panel empty-module">
-          <h2>{module} practice is coming soon</h2>
-          <p>
-            This practice lab is reserved for the future {module} module. Choose
-            Java to run code today.
-          </p>
+          <button
+            className="button mini"
+            onClick={() => setChallengeDone(true)}
+          >
+            {challengeDone ? "Challenge complete ✓" : "Mark challenge complete"}
+          </button>
         </div>
-      )}
-    </>
-  );
-}
-
-const timedTestQuestions = allQuestions
-  .filter((question) => question.difficulty === "Easy")
-  .slice(0, 10);
-
-function TimedTest() {
-  const navigate = useNavigate();
-  const [remaining, setRemaining] = useState(30 * 60);
-  const [answers, setAnswers] = useState<Record<string, number>>({});
-  const [finished, setFinished] = useState(false);
-  const finish = () => {
-    if (finished) return;
-    setFinished(true);
-    const correct = timedTestQuestions.filter(
-      (question) => answers[question.id] === question.answer,
-    ).length;
-    const score = Math.round((correct / timedTestQuestions.length) * 100);
-    const history = JSON.parse(localStorage.getItem("study-test-scores") || "[]");
-    localStorage.setItem("study-test-scores", JSON.stringify([...history, score]));
-    navigate("/results", {
-      state: { score, total: timedTestQuestions.length, kind: "timed-test" },
-    });
-  };
-  useEffect(() => {
-    if (finished) return;
-    if (remaining <= 0) {
-      finish();
-      return;
-    }
-    const timer = window.setInterval(
-      () => setRemaining((value) => Math.max(0, value - 1)),
-      1000,
-    );
-    return () => window.clearInterval(timer);
-  }, [remaining, finished]);
-  const minutes = Math.floor(remaining / 60);
-  const seconds = String(remaining % 60).padStart(2, "0");
-  return (
-    <div className="timed-test">
-      <div className="title-row">
-        <div>
-          <div className="eyebrow">SCORED CHECKPOINT · NOT ON LEADERBOARD</div>
-          <h1>30-minute test.</h1>
-          <p>Check your understanding across Java and Physics. Your score is private.</p>
-        </div>
-        <div className={remaining < 300 ? "test-timer warning" : "test-timer"}>
-          <span>TIME LEFT</span>
-          <b>{minutes}:{seconds}</b>
-        </div>
-      </div>
-      <div className="test-notice panel">
-        <span>◷</span>
-        <p>
-          This is a scored practice test, separate from XP and leaderboard
-          rankings. Submit when you are finished or let the timer expire.
-        </p>
-      </div>
-      <div className="test-questions">
-        {timedTestQuestions.map((question, index) => (
-          <section className="panel test-question" key={question.id}>
-            <div className="question-meta">
-              <span>Question {index + 1}</span>
-              <span>{question.topic}</span>
-            </div>
-            <h2>{question.prompt}</h2>
-            <div className="answers">
-              {question.options.map((option, optionIndex) => (
-                <button
-                  className={answers[question.id] === optionIndex ? "answer selected" : "answer"}
-                  disabled={finished}
-                  onClick={() =>
-                    setAnswers((current) => ({
-                      ...current,
-                      [question.id]: optionIndex,
-                    }))
-                  }
-                  key={option}
-                >
-                  <span>{String.fromCharCode(65 + optionIndex)}</span>
-                  {option}
+        <div className="editor-grid">
+          <section className="editor panel">
+            <div className="editor-head">
+              <span>● ● ● &nbsp; Main.java</span>
+              <div>
+                <button onClick={() => setCode(HELLO_WORLD_CODE)}>Reset</button>
+                <button className="run" disabled={running} onClick={runCode}>
+                  {running ? "Compiling..." : "▶ Run Java"}
                 </button>
-              ))}
+              </div>
             </div>
+            <textarea
+              spellCheck={false}
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+            />
           </section>
-        ))}
-      </div>
-      <button className="button submit" onClick={finish} disabled={finished}>
-        Submit scored test <span>→</span>
-      </button>
-    </div>
-  );
-}
-
-const studyNotes = [
-  { module: "Mechanics", category: "Physics", title: "Pass Mechanics with a free-body diagram", tips: [
-      "Write down the load, effort, and distance before choosing a formula.",
-      "Mechanical advantage is load ÷ effort; keep both forces in newtons.",
-      "For efficiency, compare useful output work with input work and multiply by 100.",
-    ],
-  },
-  {
-    module: "Loops",
-    category: "Java",
-    title: "Pass Loops by tracing one iteration",
-    tips: [
-      "Mark the counter value before and after every iteration.",
-      "Check the stopping condition before changing the loop body.",
-      "Test zero, one, and a normal-sized input to catch boundary mistakes.",
-    ],
-  },
-  {
-    module: "Exception Handling",
-    category: "Java",
-    title: "Pass Exception Handling with safe recovery",
-    tips: [
-      "Keep risky statements inside try and handle the narrowest exception you can.",
-      "Use a helpful message in catch instead of silently swallowing the error.",
-      "Put cleanup in finally when a resource must always be released.",
-    ],
-  },
-  {
-    module: "Data Types",
-    category: "Java",
-    title: "Pass Data Types without losing precision",
-    tips: [
-      "Choose int for whole values and double for measurements or fractions.",
-      "Cast before integer division when the result needs decimals.",
-      "Write the expected type beside each input while planning your solution.",
-    ],
-  },
-];
-
-function Notes() {
-  const [searchParams] = useSearchParams();
-  const initialModule = searchParams.get("module") || "";
-  const [query, setQuery] = useState(initialModule);
-  const visible = studyNotes.filter((note) =>
-    `${note.module} ${note.category} ${note.title} ${note.tips.join(" ")}`
-      .toLowerCase()
-      .includes(query.toLowerCase()),
-  );
-  return (
-    <>
-      <div className="title-row">
-        <div>
-          <div className="eyebrow">STUDY NOTES</div>
-          <h1>Notes & tips.</h1>
-          <p>Practical reminders for passing specific modules with confidence.</p>
-        </div>
-        <Link className="button" to="/modules">Browse modules <span>→</span></Link>
-      </div>
-      <div className="search notes-search">
-        <span>⌕</span>
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search Machines, Loops, or a module..."
-        />
-      </div>
-      <div className="notes-grid">
-        {visible.map((note) => (
-          <article className="panel note-card" key={note.module}>
-            <div className="note-card-head">
-              <span className="pill">{note.category}</span>
-              <span className="eyebrow">{note.module}</span>
+          <section className="output panel">
+            <div className="output-head">
+              OUTPUT <span>● {running ? "running" : "ready"}</span>
             </div>
-            <h2>{note.title}</h2>
-            <ul>
-              {note.tips.map((tip) => <li key={tip}>{tip}</li>)}
-            </ul>
-            <Link className="text-link" to={`/quiz/${note.module}`}>Practice this module →</Link>
-          </article>
-        ))}
-      </div>
-      {!visible.length && (
-        <div className="panel empty">
-          No notes match that search yet. Try Machines, Loops, or Data Types.
+            <pre>{output}</pre>
+            <small>
+              Output comes from javac and java on the server, including compiler
+              errors.
+            </small>
+          </section>
         </div>
-      )}
+        <div className="mistake-row panel">
+          <span className="history-check">◌</span>
+          <div>
+            <b>Practice mistakes</b>
+            <p>Questions you miss are collected here for focused review.</p>
+          </div>
+          <Link to="/quiz/Java Basics">Review mistakes →</Link>
+        </div>
+      </>
     </>
   );
 }
@@ -3028,81 +3237,209 @@ function Progress({
   answered,
   scores,
   xp,
-  selectedCourses,
 }: {
   answered: string[];
   scores: number[];
   xp: number;
-  selectedCourses: string[];
 }) {
-  const accuracy = answered.length ? 78 : 0;
-  const startedModules = selectedCourses.flatMap((course) =>
-    course === "Calculus" ? ["Calculus", "Integral Calculus"] : course === "Physics" ? ["Mechanics"] : [course],
-  );
+  // Real numbers derived from the student's own activity, not fixed values.
+  const accuracy = scores.length
+    ? Math.round(scores.reduce((sum, value) => sum + value, 0) / scores.length)
+    : 0;
+  const weekStreak = getWeekStreak();
+  const bestStreak = getBestWeekStreak();
+  const answeredThisWeek = hasActivityThisWeek();
+  const bestScore = scores.length ? Math.max(...scores) : 0;
+
+  // Per-sub-topic mastery: how many of each topic's questions have been answered.
+  const topicMastery = topics.map((topic, index) => {
+    const total = javaQuestionBank.filter((q) => q.topic === topic).length;
+    const done = javaQuestionBank.filter(
+      (q) => q.topic === topic && answered.includes(q.id),
+    ).length;
+    return {
+      topic,
+      index,
+      total,
+      done,
+      percent: total ? Math.round((done / total) * 100) : 0,
+    };
+  });
+  const weakest = [...topicMastery]
+    .filter((item) => item.total > 0)
+    .sort((a, b) => a.percent - b.percent)
+    .slice(0, 3);
+  const strongest = [...topicMastery]
+    .filter((item) => item.percent > 0)
+    .sort((a, b) => b.percent - a.percent)[0];
+
   return (
     <>
       <div className="title-row">
         <div>
           <div className="eyebrow">YOUR STUDY DATA</div>
-          <h1>Progress that compounds.</h1>
-          <p>Use your weak spots as a map for what to practice next.</p>
+          <h1>My progress.</h1>
+          <p>
+            Everything you have done so far, and what to do next — all in one
+            place.
+          </p>
         </div>
-        <span className="level-badge">
-          LEVEL 4 <b>Builder</b>
-        </span>
+        <Link className="button" to="/practice">
+          Keep practising <span>→</span>
+        </Link>
       </div>
-      <div className="progress-hero panel">
-        <div className="ring">
-          <b>
-            {accuracy}
-            <small>%</small>
-          </b>
-        </div>
-        <div>
-          <span className="eyebrow">OVERALL ACCURACY</span>
-          <h2>You’re building strong instincts.</h2>
-          <p>Answer more questions to make this picture more accurate.</p>
-        </div>
-        <div className="hero-stat">
-          <small>QUESTIONS</small>
-          <b>{answered.length}</b>
-          <span>answered</span>
-        </div>
-        <div className="hero-stat">
-          <small>XP EARNED</small>
-          <b>{xp}</b>
-          <span>total points</span>
-        </div>
+
+      <div className="stats">
+        <Stat
+          icon="◎"
+          label="Accuracy"
+          value={`${accuracy}%`}
+          detail={`Best: ${bestScore}%`}
+          color="green"
+        />
+        <Stat
+          icon="◈"
+          label="Questions answered"
+          value={String(answered.length)}
+          detail={`of ${javaQuestionBank.length} in Java`}
+          color="purple"
+        />
+        <Stat
+          icon="✦"
+          label="Total XP"
+          value={xp.toLocaleString()}
+          detail="Points earned"
+          color="orange"
+        />
+        <Stat
+          icon="♨"
+          label="Week streak"
+          value={`${weekStreak}`}
+          detail={
+            answeredThisWeek
+              ? `Best: ${bestStreak} weeks`
+              : "Answer a quiz this week"
+          }
+          color="blue"
+        />
       </div>
-      <section className="panel started-modules-panel">
-        <div className="panel-head"><div><span className="eyebrow">MODULES STARTED</span><h2>Your learning journey</h2></div></div>
-        <div className="dashboard-module-list">
-          {(selectedCourses.length ? selectedCourses : ["No modules started yet"]).map((course) => <span className="pill" key={course}>{course}</span>)}
+
+      <section className="panel progress-cta-panel">
+        <div className="panel-head">
+          <div>
+            <span className="eyebrow">JUMP BACK IN</span>
+            <h2>Continue where it matters</h2>
+          </div>
+        </div>
+        <div className="progress-link-grid">
+          <Link className="progress-link" to="/notes">
+            <span>✎</span>
+            <div>
+              <b>Study the notes</b>
+              <small>Re-learn a weak sub-topic</small>
+            </div>
+            <em>→</em>
+          </Link>
+          <Link
+            className="progress-link"
+            to={weakest[0] ? `/quiz/${weakest[0].topic}` : "/modules"}
+          >
+            <span>⌘</span>
+            <div>
+              <b>
+                {weakest[0]
+                  ? `Fix ${weakest[0].topic}`
+                  : "Start a practice quiz"}
+              </b>
+              <small>Your weakest sub-topic</small>
+            </div>
+            <em>→</em>
+          </Link>
+          <Link className="progress-link" to="/test">
+            <span>◷</span>
+            <div>
+              <b>Take a 20-question test</b>
+              <small>Random set, then full review</small>
+            </div>
+            <em>→</em>
+          </Link>
+          <Link className="progress-link" to="/leaderboard">
+            <span>♛</span>
+            <div>
+              <b>See the leaderboard</b>
+              <small>How you compare</small>
+            </div>
+            <em>→</em>
+          </Link>
         </div>
       </section>
+
       <div className="progress-columns">
         <section className="panel">
           <div className="panel-head">
             <div>
-              <span className="eyebrow">TOPIC MASTERY</span>
-              <h2>Strong and weak spots</h2>
+              <span className="eyebrow">SUB-TOPIC MASTERY</span>
+              <h2>Java, topic by topic</h2>
             </div>
+            <span className="pill">{answered.length} answered</span>
           </div>
-          {(startedModules.length ? startedModules : ["No modules started yet"]).map((module, i) => (
-            <div className="mastery" key={module}>
+          {strongest && (
+            <div className="mastery-highlight">
+              <b>Strongest: {strongest.topic}</b>
+              <small>{strongest.percent}% covered</small>
+            </div>
+          )}
+          {topicMastery.map((item) => (
+            <div className="mastery" key={item.topic}>
               <div>
-                <b>{module}</b>
-                <span>{answered.length && i === 0 ? "In progress" : "Started"}</span>
+                <b>{item.topic}</b>
+                <span className="mastery-count">
+                  {item.done}/{item.total}
+                </span>
               </div>
-              <div className="tiny-bar"><i className={i === 0 ? "good" : ""} style={{ width: `${i === 0 && answered.length ? 38 : 0}%` }} /></div>
+              <div className="tiny-bar">
+                <i
+                  className={item.percent >= 50 ? "good" : ""}
+                  style={{ width: `${item.percent}%` }}
+                />
+              </div>
+              <Link className="mastery-link" to={`/quiz/${item.topic}`}>
+                Practice →
+              </Link>
             </div>
           ))}
         </section>
         <section className="panel">
           <div className="panel-head">
             <div>
-              <span className="eyebrow">QUIZ HISTORY</span>
-              <h2>Recent results</h2>
+              <span className="eyebrow">WEAK SPOTS</span>
+              <h2>What to fix next</h2>
+            </div>
+          </div>
+          {weakest.length ? (
+            weakest.map((item) => (
+              <div className="result-line" key={item.topic}>
+                <span>◌</span>
+                <div>
+                  <b>{item.topic}</b>
+                  <small>{100 - item.percent}% left to cover</small>
+                </div>
+                <Link
+                  to={`/notes?category=Java&module=${encodeURIComponent(item.topic)}`}
+                >
+                  Notes →
+                </Link>
+              </div>
+            ))
+          ) : (
+            <div className="empty">
+              Answer some questions and your weak spots will appear here.
+            </div>
+          )}
+          <div className="panel-head history-head">
+            <div>
+              <span className="eyebrow">RECENT RESULTS</span>
+              <h2>Quiz history</h2>
             </div>
           </div>
           {scores.length ? (
@@ -3111,7 +3448,7 @@ function Progress({
               .reverse()
               .map((score, i) => (
                 <div className="result-line" key={`${score}-${i}`}>
-                  <span>✓</span>
+                  <span>{score >= 70 ? "✓" : "◌"}</span>
                   <div>
                     <b>Java checkpoint</b>
                     <small>Completed recently</small>
@@ -3174,24 +3511,17 @@ function Leaderboard({
   user,
   xp,
   scores,
-  selectedCourses,
 }: {
   user: User | null;
   xp: number;
   scores: number[];
-  selectedCourses: string[];
 }) {
-  const userCourse = selectedCourses[0] || "Java";
-  const userCourseCategory =
-    popularCourses.find(([name]) => name === userCourse)?.[1] === "Mathematics"
-      ? "Math"
-      : popularCourses.find(([name]) => name === userCourse)?.[1] || "Coding";
-  const categories = ["Overall", ...new Set(["Coding", "Math", "Physics"])];
-  const [category, setCategory] = useState("Overall");
+  const myStreak = getWeekStreak();
+  // Java-only board: StudyLab currently runs the Java module in the UI.
   const rows = [
     {
       name: "Maya Chen",
-      category: userCourseCategory,
+      category: "Java",
       xp: 1840,
       quizzes: 31,
       average: 94,
@@ -3199,7 +3529,7 @@ function Leaderboard({
     },
     {
       name: "Jordan Lee",
-      category: "Math",
+      category: "Java",
       xp: 1620,
       quizzes: 26,
       average: 91,
@@ -3207,57 +3537,33 @@ function Leaderboard({
     },
     {
       name: user?.name || "Student",
-      category: userCourseCategory,
+      category: "Java",
       xp,
       quizzes: scores.length,
       average: scores.length
         ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
         : 0,
-      streak: 4,
+      streak: myStreak,
     },
     {
       name: "Sam Okafor",
-      category: "Math",
+      category: "Java",
       xp: 980,
       quizzes: 17,
       average: 82,
       streak: 7,
     },
   ].sort((a, b) => b.xp - a.xp);
-  const visibleRows =
-    category === "Overall"
-      ? rows
-      : rows.filter(
-          (row) =>
-            row.category === category ||
-            (row.name === user?.name && userCourseCategory === category),
-        );
+  const visibleRows = rows;
   return (
     <>
       <div className="title-row">
         <div>
-          <div className="eyebrow">
-            {category === "Overall"
-              ? "ALL STUDYLAB"
-              : `${category.toUpperCase()} COMMUNITY`}
-          </div>
+          <div className="eyebrow">JAVA COMMUNITY</div>
           <h1>Leaderboard.</h1>
-          <p>
-            Compare progress across the whole platform or one module category.
-          </p>
+          <p>Compare your Java progress with other StudyLab students.</p>
         </div>
         <span className="pill">THIS MONTH</span>
-      </div>
-      <div className="leaderboard-tabs">
-        {categories.map((item) => (
-          <button
-            className={category === item ? "active" : ""}
-            onClick={() => setCategory(item)}
-            key={item}
-          >
-            {item}
-          </button>
-        ))}
       </div>
       <div className="podium">
         {visibleRows.slice(0, 3).map((row, i) => (
@@ -3266,7 +3572,7 @@ function Leaderboard({
             <b>{row.name}</b>
             <strong>{row.xp.toLocaleString()} XP</strong>
             <small>
-              {row.average}% avg · {row.streak} day streak
+              {row.average}% avg · {row.streak} week streak
             </small>
           </div>
         ))}
@@ -3287,7 +3593,11 @@ function Leaderboard({
           >
             <b>#{i + 1}</b>
             <strong>
-              {row.name === user?.name && user.picture ? <img className="leaderboard-avatar" src={user.picture} alt="" /> : <i>{row.name[0]}</i>}
+              {row.name === user?.name && user.picture ? (
+                <img className="leaderboard-avatar" src={user.picture} alt="" />
+              ) : (
+                <i>{row.name[0]}</i>
+              )}
               {row.name}
               {row.name === user?.name && <em>YOU</em>}
             </strong>
@@ -3301,12 +3611,37 @@ function Leaderboard({
     </>
   );
 }
+// The founder's details live here so the About tab and the auto-updating age
+// stay in one place. Age is computed from the birth date every time the page
+// renders, so it ticks up in years on its own.
+const FOUNDER = {
+  name: "Cleophus Tshinyelani",
+  role: "Founder of CT TECH",
+  university: "Studying Computer Science and Mathematics at university",
+  birth: new Date(2007, 1, 18, 8, 43), // 18 February 2007, 08:43
+  place: "South Africa",
+};
+
+function founderAge(now: Date = new Date()): number {
+  let age = now.getFullYear() - FOUNDER.birth.getFullYear();
+  const monthDiff = now.getMonth() - FOUNDER.birth.getMonth();
+  if (
+    monthDiff < 0 ||
+    (monthDiff === 0 && now.getDate() < FOUNDER.birth.getDate())
+  ) {
+    age -= 1;
+  }
+  return age;
+}
+
 function Profile({
   user,
   onUpdate,
+  onLogout,
 }: {
   user: User | null;
   onUpdate: (user: User) => void;
+  onLogout: () => void;
 }) {
   const [name, setName] = useState(user?.name || "");
   const [university, setUniversity] = useState(user?.university || "");
@@ -3314,6 +3649,8 @@ function Profile({
   const [picture, setPicture] = useState(user?.picture || "");
   const [saved, setSaved] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [tab, setTab] = useState<"profile" | "terms" | "about">("profile");
+  const age = founderAge();
   const degreeTopics =
     degreeCatalog.find((option) => option.name === course)?.topics || [];
   const save = async () => {
@@ -3329,7 +3666,14 @@ function Profile({
     };
     const token = localStorage.getItem("java-token");
     try {
-      const response = await fetch("/api/auth/profile", { method: "PATCH", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(next) });
+      const response = await fetch("/api/auth/profile", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(next),
+      });
       const result = await response.json();
       onUpdate(result.user || next);
     } catch {
@@ -3343,7 +3687,11 @@ function Profile({
     if (!window.confirm("Delete your StudyLab account and progress?")) return;
     const token = localStorage.getItem("java-token");
     try {
-      if (token) await fetch("/api/auth/account", { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+      if (token)
+        await fetch("/api/auth/account", {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        });
     } finally {
       localStorage.clear();
       window.location.href = "/auth";
@@ -3354,85 +3702,449 @@ function Profile({
       <div className="title-row">
         <div>
           <div className="eyebrow">YOUR ACCOUNT</div>
-          <h1>Profile.</h1>
-          <p>Your StudyLab identity and study preferences.</p>
+          <h1>Account.</h1>
+          <p>Your StudyLab identity and account information.</p>
         </div>
         <div className="profile-actions">
-          {editing ? <button className="button" onClick={save}>{saved ? "Changes saved ✓" : "Save changes"}</button> : <button className="button" onClick={() => setEditing(true)}>Edit profile</button>}
+          {tab === "profile" &&
+            (editing ? (
+              <button className="button" onClick={save}>
+                {saved ? "Changes saved ✓" : "Save changes"}
+              </button>
+            ) : (
+              <button className="button" onClick={() => setEditing(true)}>
+                Edit profile
+              </button>
+            ))}
         </div>
       </div>
-      <section className="panel profile-degree">
+
+      <div className="leaderboard-tabs account-tabs">
+        {(
+          [
+            ["profile", "Profile"],
+            ["terms", "Terms & Conditions"],
+            ["about", "About"],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            className={tab === value ? "active" : ""}
+            onClick={() => setTab(value)}
+            key={value}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "terms" && <TermsPanel />}
+
+      {tab === "about" && (
+        <section className="panel about-panel">
+          <div className="about-head">
+            <div className="about-avatar">CT</div>
+            <div>
+              <span className="eyebrow">{FOUNDER.role.toUpperCase()}</span>
+              <h2>{FOUNDER.name}</h2>
+              <p className="about-age">
+                {age} years old · born 18 February 2007
+              </p>
+            </div>
+          </div>
+          <p>
+            I am Cleophus Tshinyelani, the founder of CT TECH. I am {age} years
+            old and I am studying Computer Science and Mathematics at
+            university. I built StudyLab because too many students practise
+            questions without ever really understanding what they are doing.
+            StudyLab pairs clear, plain-language notes with practice and tests
+            built from those same notes, so every answer teaches you something.
+          </p>
+          <p>
+            The goal is simple: help students move from memorising to genuinely
+            understanding their subjects, one sub-topic at a time.
+          </p>
+          <div className="about-facts">
+            <span className="pill">CT TECH</span>
+            <span className="pill">{FOUNDER.role}</span>
+            <span className="pill">Computer Science and Mathematics</span>
+          </div>
+        </section>
+      )}
+
+      {tab === "profile" && (
+        <>
+          <section className="panel profile-degree">
+            <div className="panel-head">
+              <div>
+                <span className="eyebrow">YOUR DEGREE</span>
+                <h2>{course.trim() || "Degree not added yet"}</h2>
+                <p>
+                  This is the degree or programme you are currently studying.
+                  Use Edit profile to update it.
+                </p>
+                {degreeTopics.length > 0 && (
+                  <div className="dashboard-module-list">
+                    {degreeTopics.map((topic) => (
+                      <span className="pill" key={topic}>
+                        {topic}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <span className="pill">
+                {course.trim() ? "ADDED" : "NOT ADDED"}
+              </span>
+            </div>
+          </section>
+          <div className="profile-grid">
+            <section className="panel profile-card">
+              {picture ? (
+                <img
+                  className="big-avatar profile-picture"
+                  src={picture}
+                  alt="Profile"
+                />
+              ) : (
+                <div className="big-avatar">{name[0]}</div>
+              )}
+              <h2>{name}</h2>
+              <p>{user?.email}</p>
+              <span className="pill">STUDENT</span>
+              <hr />
+              <div>
+                <small>Member since</small>
+                <b>September 2026</b>
+              </div>
+              <div>
+                <small>Current focus</small>
+                <b>{course.trim() || "Degree not added yet"}</b>
+              </div>
+            </section>
+            <section className="panel profile-form">
+              <span className="eyebrow">PERSONAL DETAILS</span>
+              <h2>Make it yours.</h2>
+              {!editing && (
+                <p className="profile-readonly-message">
+                  Your information is locked. Press <b>Edit profile</b> above to
+                  make changes.
+                </p>
+              )}
+              <label>
+                Display name
+                <input
+                  readOnly={!editing}
+                  disabled={!editing}
+                  value={name}
+                  onChange={(event) => {
+                    setName(event.target.value);
+                    setSaved(false);
+                  }}
+                />
+              </label>
+              <label>
+                University or college
+                <input
+                  readOnly={!editing}
+                  disabled={!editing}
+                  value={university}
+                  onChange={(event) => setUniversity(event.target.value)}
+                  placeholder="Add your university"
+                />
+              </label>
+              <label>
+                Profile picture
+                <input
+                  disabled={!editing}
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = () => setPicture(String(reader.result));
+                    reader.readAsDataURL(file);
+                  }}
+                />
+              </label>
+              <label>
+                Degree or programme
+                <select
+                  disabled={!editing}
+                  value={course}
+                  onChange={(event) => setCourse(event.target.value)}
+                >
+                  <option value="">Select your degree</option>
+                  {degreeCatalog.map((option) => (
+                    <option key={option.name}>{option.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Email
+                <input readOnly disabled value={user?.email || ""} />
+              </label>
+              <div className="profile-settings-link">
+                <div>
+                  <b>Preferences</b>
+                  <small>
+                    Language, theme, daily goal and more now live in Settings.
+                  </small>
+                </div>
+                <Link className="button secondary mini" to="/settings">
+                  Open settings <span>→</span>
+                </Link>
+              </div>
+              <div className="account-actions-row">
+                <button
+                  className="button secondary"
+                  type="button"
+                  onClick={onLogout}
+                >
+                  Log out
+                </button>
+                <button
+                  className="button danger"
+                  type="button"
+                  onClick={removeAccount}
+                >
+                  Delete account
+                </button>
+              </div>
+            </section>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+function SettingToggle({
+  label,
+  hint,
+  checked,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <label className="setting-toggle">
+      <span className="setting-toggle-copy">
+        <b>{label}</b>
+        <small>{hint}</small>
+      </span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        className={checked ? "switch-pill on" : "switch-pill"}
+        onClick={() => onChange(!checked)}
+      >
+        <i />
+      </button>
+    </label>
+  );
+}
+
+function Settings({
+  dark,
+  toggleTheme,
+}: {
+  dark: boolean;
+  toggleTheme: () => void;
+}) {
+  const [toggles, setToggles] = useState(() => ({
+    notifications: localStorage.getItem("study-notifications") !== "off",
+    sounds: localStorage.getItem("study-sounds") !== "off",
+    autoSave: localStorage.getItem("study-autosave") !== "off",
+    showAnswers: localStorage.getItem("study-show-answers") !== "off",
+    reduceMotion: localStorage.getItem("study-reduce-motion") === "on",
+  }));
+  const [language, setLanguage] = useState(
+    () => localStorage.getItem("study-language") || "en",
+  );
+  const [dailyGoal, setDailyGoal] = useState(
+    () => localStorage.getItem("study-daily-goal") || "30",
+  );
+  const [saved, setSaved] = useState(false);
+
+  const setToggle = (key: keyof typeof toggles, value: boolean) => {
+    const next = { ...toggles, [key]: value };
+    setToggles(next);
+    const storageKey =
+      key === "showAnswers"
+        ? "study-show-answers"
+        : key === "reduceMotion"
+          ? "study-reduce-motion"
+          : `study-${key}`;
+    const invertedOff = key === "reduceMotion";
+    localStorage.setItem(
+      storageKey,
+      (value !== invertedOff ? "on" : "off") as string,
+    );
+    setSaved(true);
+  };
+
+  return (
+    <>
+      <div className="title-row">
+        <div>
+          <div className="eyebrow">PREFERENCES</div>
+          <h1>Settings.</h1>
+          <p>Adjust how StudyLab looks, behaves and keeps you on track.</p>
+        </div>
+        <span className="pill">{saved ? "SAVED ✓" : "AUTO-SAVED"}</span>
+      </div>
+
+      <section className="panel settings-group">
         <div className="panel-head">
           <div>
-            <span className="eyebrow">YOUR DEGREE</span>
-            <h2>{course.trim() || "Degree not added yet"}</h2>
-            <p>This is the degree or programme you are currently studying. Use Edit profile to update it.</p>
-            {degreeTopics.length > 0 && (
-              <div className="dashboard-module-list">
-                {degreeTopics.map((topic) => <span className="pill" key={topic}>{topic}</span>)}
-              </div>
-            )}
+            <span className="eyebrow">REGION & LANGUAGE</span>
+            <h2>Language</h2>
+            <p>Choose the language StudyLab displays. More are coming soon.</p>
           </div>
-          <span className="pill">{course.trim() ? "ADDED" : "NOT ADDED"}</span>
         </div>
+        <label className="setting-field">
+          Display language
+          <select
+            value={language}
+            onChange={(event) => {
+              setLanguage(event.target.value);
+              localStorage.setItem("study-language", event.target.value);
+              setSaved(true);
+            }}
+          >
+            <option value="en">English (only available)</option>
+          </select>
+        </label>
       </section>
-      <div className="profile-grid">
-        <section className="panel profile-card">
-          {picture ? <img className="big-avatar profile-picture" src={picture} alt="Profile" /> : <div className="big-avatar">{name[0]}</div>}
-          <h2>{name}</h2>
-          <p>{user?.email}</p>
-          <span className="pill">STUDENT</span>
-          <hr />
+
+      <section className="panel settings-group">
+        <div className="panel-head">
           <div>
-            <small>Member since</small>
-            <b>September 2026</b>
+            <span className="eyebrow">APPEARANCE</span>
+            <h2>Theme</h2>
+            <p>Switch between light and dark mode. Your choice is remembered.</p>
           </div>
+        </div>
+        <SettingToggle
+          label="Dark mode"
+          hint="Use a darker colour scheme across the app"
+          checked={dark}
+          onChange={toggleTheme}
+        />
+        <SettingToggle
+          label="Reduce motion"
+          hint="Limit animations and transitions"
+          checked={toggles.reduceMotion}
+          onChange={(value) => setToggle("reduceMotion", value)}
+        />
+      </section>
+
+      <section className="panel settings-group">
+        <div className="panel-head">
           <div>
-            <small>Current focus</small>
-            <b>{course.trim() || "Degree not added yet"}</b>
+            <span className="eyebrow">STUDY HABITS</span>
+            <h2>Practice & reminders</h2>
+            <p>Shape how you practise and how StudyLab nudges you.</p>
           </div>
-        </section>
-        <section className="panel profile-form">
-          <span className="eyebrow">PERSONAL DETAILS</span>
-          <h2>Make it yours.</h2>
-          {!editing && <p className="profile-readonly-message">Your information is locked. Press <b>Edit profile</b> above to make changes.</p>}
-          <label>
-            Display name
-            <input readOnly={!editing} disabled={!editing} value={name} onChange={(event) => { setName(event.target.value); setSaved(false); }} />
-          </label>
-          <label>
-            University or college
-            <input readOnly={!editing} disabled={!editing} value={university} onChange={(event) => setUniversity(event.target.value)} placeholder="Add your university" />
-          </label>
-          <label>
-            Profile picture
-            <input disabled={!editing} type="file" accept="image/*" onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (!file) return;
-              const reader = new FileReader();
-              reader.onload = () => setPicture(String(reader.result));
-              reader.readAsDataURL(file);
-            }} />
-          </label>
-          <label>
-            Degree or programme
-            <select disabled={!editing} value={course} onChange={(event) => setCourse(event.target.value)}>
-              <option value="">Select your degree</option>
-              {degreeCatalog.map((option) => <option key={option.name}>{option.name}</option>)}
-            </select>
-          </label>
-          <label>
-            Daily goal
-            <select disabled={!editing} defaultValue="30">
-              <option value="15">15 minutes</option>
-              <option value="30">30 minutes</option>
-              <option value="60">60 minutes</option>
-            </select>
-          </label>
-          <button className="button danger" type="button" onClick={removeAccount}>Delete account</button>
-        </section>
-      </div>
+        </div>
+        <label className="setting-field">
+          Daily study goal
+          <select
+            value={dailyGoal}
+            onChange={(event) => {
+              setDailyGoal(event.target.value);
+              localStorage.setItem("study-daily-goal", event.target.value);
+              setSaved(true);
+            }}
+          >
+            <option value="15">15 minutes</option>
+            <option value="30">30 minutes</option>
+            <option value="60">60 minutes</option>
+            <option value="90">90 minutes</option>
+          </select>
+        </label>
+        <SettingToggle
+          label="Study reminders"
+          hint="Remind me to keep my weekly streak alive"
+          checked={toggles.notifications}
+          onChange={(value) => setToggle("notifications", value)}
+        />
+        <SettingToggle
+          label="Sound feedback"
+          hint="Play a sound when an answer is correct or wrong"
+          checked={toggles.sounds}
+          onChange={(value) => setToggle("sounds", value)}
+        />
+      </section>
+
+      <section className="panel settings-group">
+        <div className="panel-head">
+          <div>
+            <span className="eyebrow">QUIZZES & EDITOR</span>
+            <h2>Learning behaviour</h2>
+            <p>Control how quizzes and the practice lab respond to you.</p>
+          </div>
+        </div>
+        <SettingToggle
+          label="Auto-save practice code"
+          hint="Keep your Java code in the practice lab between visits"
+          checked={toggles.autoSave}
+          onChange={(value) => setToggle("autoSave", value)}
+        />
+        <SettingToggle
+          label="Show answers after a quiz"
+          hint="Reveal correct answers and explanations when you finish"
+          checked={toggles.showAnswers}
+          onChange={(value) => setToggle("showAnswers", value)}
+        />
+      </section>
     </>
+  );
+}
+
+function TermsPanel() {
+  return (
+    <section className="panel legal-panel">
+      <span className="eyebrow">STUDYLAB LEGAL</span>
+      <h2>Terms and Conditions</h2>
+      <p>
+        StudyLab provides educational practice content for personal learning.
+        You are responsible for checking answers and using the service lawfully.
+      </p>
+      <h3>Your account</h3>
+      <p>
+        You must register with a valid student email address and keep your
+        password secure. Accounts use accurate information and must not be
+        shared.
+      </p>
+      <h3>Acceptable use</h3>
+      <p>
+        Do not submit confidential, copyrighted, or harmful material. Do not
+        attempt to disrupt the service or access other students' accounts.
+      </p>
+      <h3>Content</h3>
+      <p>
+        Notes, questions and tests are provided as-is for study. While we work
+        to keep everything accurate, always confirm against your own course
+        material.
+      </p>
+      <h3>Privacy</h3>
+      <p>
+        We store your account details and learning activity to provide the
+        service and show your progress, as described in the Privacy Notice.
+      </p>
+      <p className="legal-note">
+        This is a general product notice, not legal advice. Please have a
+        qualified lawyer review these terms for your jurisdiction before relying
+        on them for legal protection.
+      </p>
+    </section>
   );
 }
 
