@@ -43,3 +43,392 @@
 .exercise-answer{margin-top:12px;padding:11px;border-left:3px solid var(--green);background:var(--paper);font-size:12px;line-height:1.6}
 @media (max-width:700px){.module-cards{grid-template-columns:1fr}.module-card{padding:18px}}
 @media (max-width:520px){.module-request form{display:grid}.leaderboard-tabs{overflow-x:auto}}
+
+
+/* ------------------------------------------------------------------ */
+/* Notes flow (module → sub-topics → teaching notes)                   */
+/* ------------------------------------------------------------------ */
+.notes-steps{display:flex;gap:10px;list-style:none;margin:0 0 24px;padding:0;flex-wrap:wrap}
+.notes-steps li{display:flex;align-items:center;gap:8px;padding:8px 14px;border:1px solid var(--line);border-radius:999px;background:var(--paper);color:var(--muted);font-size:11px}
+.notes-steps li b{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--canvas);color:var(--muted);font:600 10px 'DM Mono'}
+.notes-steps li.active{border-color:var(--purple);color:var(--purple);background:var(--purple-soft)}
+.notes-steps li.active b{background:var(--purple);color:#fff}
+.notes-steps li.done{color:var(--green);border-color:#cbe6d5}
+.notes-steps li.done b{background:#e3f3e8;color:var(--green)}
+.notes-step{margin-bottom:30px}
+.notes-module-cards{margin-top:6px}
+.notes-module-cards .module-card{text-align:left;cursor:pointer}
+.notes-module-cards .module-card.disabled{opacity:.55;cursor:not-allowed}
+.notes-step-head{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;flex-wrap:wrap}
+.notes-step-hint{color:var(--muted);font-size:12px;line-height:1.6;margin:6px 0 0;max-width:560px}
+.notes-step-actions{display:flex;gap:8px;flex-wrap:wrap}
+.subtopic-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:18px}
+.subtopic-card{display:flex;align-items:center;gap:14px;text-align:left;border:1px solid var(--line);border-radius:8px;background:var(--paper);padding:16px;cursor:pointer;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}
+.subtopic-card:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(40,35,50,.08)}
+.subtopic-card.selected{border-color:var(--purple);background:var(--purple-soft)}
+.subtopic-index{font:600 13px 'DM Mono';color:var(--purple)}
+.subtopic-body{flex:1;min-width:0}
+.subtopic-body strong{display:block;font-size:14px}
+.subtopic-body small{display:block;color:var(--muted);font-size:11px;line-height:1.5;margin-top:4px}
+.subtopic-check{display:grid;place-items:center;width:26px;height:26px;flex:none;border-radius:50%;border:1px solid var(--line);color:var(--muted);font-size:13px}
+.subtopic-card.selected .subtopic-check{background:var(--purple);border-color:var(--purple);color:#fff}
+.notes-start-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-top:22px}
+
+/* Teaching card */
+.teaching-note{max-width:none}
+.note-summary{color:var(--muted);font-size:13px;line-height:1.6;margin:6px 0 18px}
+.note-section{margin-bottom:16px}
+.note-section h3{font-size:14px;margin:0 0 6px;color:var(--purple)}
+.note-section p{color:var(--ink);font-size:12px;line-height:1.7;margin:0 0 8px}
+.note-bullets{margin:6px 0 0;padding-left:20px;color:var(--muted);font-size:12px;line-height:1.75}
+.note-block{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
+.note-code{margin:10px 0 0;padding:14px 16px;border-radius:8px;background:#292437;color:#e3dced;font:12px/1.7 'DM Mono',monospace;overflow-x:auto;white-space:pre}
+.example-code{background:#211d2e}
+.note-takeaway{font-size:12px;line-height:1.6;color:var(--ink);margin:10px 0 0}
+.note-takeaway b{color:var(--purple)}
+.pitfalls-block .note-bullets{border-left:3px solid var(--orange);padding-left:16px;list-style:none;margin-left:0}
+.pitfalls-block .note-bullets li{margin-bottom:6px}
+.revision-block .note-bullets{border-left:3px solid var(--green);padding-left:16px;list-style:none;margin-left:0}
+.revision-block .note-bullets li{margin-bottom:6px}
+.note-actions{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:22px}
+.note-actions .text-link{margin-top:0}
+
+@media (max-width:700px){
+  .subtopic-grid{grid-template-columns:1fr}
+  .notes-step-head{display:block}
+  .notes-step-actions{margin-top:14px}
+  .notes-start-bar{display:grid}
+  .notes-start-bar .button{width:100%}
+}
+
+/* ------------------------------------------------------------------ */
+/* Resizable + collapsible sidebar                                     */
+/* ------------------------------------------------------------------ */
+.shell{--sidebar-width:240px}
+.sidebar{width:var(--sidebar-width)}
+.main{margin-left:var(--sidebar-width);transition:margin-left .2s ease}
+
+/* Collapsed = a narrow rail. The burger stays visible on the rail so it can
+   always reopen the sidebar (the burger lives inside the sidebar). */
+.shell.sidebar-collapsed .main{margin-left:64px}
+.shell.sidebar-collapsed .sidebar{width:64px;overflow:hidden}
+.shell.sidebar-collapsed .sidebar .side-logo{justify-content:center}
+.shell.sidebar-collapsed .sidebar .side-logo .logo{display:none}
+.shell.sidebar-collapsed .sidebar .side-label{display:none}
+.shell.sidebar-collapsed .sidebar nav a{justify-content:center;gap:0;padding-left:0;padding-right:0;text-align:center}
+.shell.sidebar-collapsed .sidebar nav a>span,.shell.sidebar-collapsed .sidebar nav a{font-size:0}
+.shell.sidebar-collapsed .sidebar nav a b{font-size:16px;width:100%;margin:0 auto}
+.shell.sidebar-collapsed .side-bottom .streak>div{display:none}
+.shell.sidebar-collapsed .side-bottom .profile-mini span{display:none}
+.shell.sidebar-collapsed .sidebar-resizer{display:none}
+.shell.sidebar-collapsed .sidebar-burger span{width:16px}
+
+/* Icons are rendered in a fixed, centred box with normal weight so text
+   glyphs line up the same way regardless of which symbol they are. */
+.sidebar nav a b{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;flex:0 0 18px;font-weight:400;font-size:16px;line-height:1;text-align:center}
+.quick-icon,.progress-link>span,.stat-icon,.module-card-icon,.module-placeholder-icon{display:inline-flex;align-items:center;justify-content:center;font-weight:400;line-height:1}
+.side-logo{align-items:center;gap:8px}
+.side-logo-actions{display:flex;align-items:center;gap:4px}
+.sidebar-resizer{position:absolute;top:0;right:-3px;width:6px;height:100%;cursor:col-resize;background:transparent;z-index:6}
+.sidebar-resizer:hover{background:linear-gradient(90deg,transparent,var(--purple-soft),transparent)}
+
+.hamburger{display:inline-flex;flex-direction:column;justify-content:center;gap:4px;width:30px;height:30px;border:0;background:none;cursor:pointer;padding:0}
+.hamburger span{display:block;width:20px;height:2px;border-radius:2px;background:var(--ink);margin:0 auto}
+.hamburger:hover span{background:var(--purple)}
+
+@media (max-width:650px){
+  /* On a phone the sidebar becomes an off-canvas drawer; the burger inside it
+     closes it and the header burger reopens it. The open drawer must sit ABOVE
+     the sticky header, otherwise the header intercepts taps on the burger. */
+  .main{margin-left:0}
+  .shell.sidebar-collapsed .main{margin-left:0}
+  .shell.menu-open .main{margin-left:0}
+  .sidebar-resizer{display:none}
+  .sidebar{width:min(82vw,300px);z-index:60}
+  .shell.sidebar-collapsed .sidebar{width:min(82vw,300px);z-index:60}
+  .shell.menu-open .sidebar{z-index:60}
+  .main>header{z-index:10}
+}
+
+.test-mix{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+.hard-pill{background:#fdece1;color:var(--orange)}
+
+.quiz-aside-link{margin:12px 0 4px;display:inline-flex}
+
+/* ------------------------------------------------------------------ */
+/* Back button + header layout                                         */
+/* ------------------------------------------------------------------ */
+.back-button{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:999px;padding:7px 13px;font-size:12px;font-weight:600;cursor:pointer}
+.back-button:hover{border-color:var(--purple);color:var(--purple)}
+
+/* The burger lives inside the sidebar and is always visible there. It toggles
+   the sidebar between open and closed. The header burger is only a fallback so
+   a phone can reopen the drawer once it is closed. */
+.side-logo button.sidebar-burger{display:inline-flex;flex:none;order:-1}
+.header-burger{display:none}
+.shell:not(.sidebar-collapsed) .header-burger,.shell.menu-open .header-burger{display:none}
+
+/* ------------------------------------------------------------------ */
+/* Test review                                                         */
+/* ------------------------------------------------------------------ */
+.test-review{max-width:900px}
+.review-hero{padding:34px;margin-bottom:22px}
+.review-score{display:flex;align-items:baseline;gap:12px;margin:10px 0 14px}
+.review-score b{font-size:52px;color:var(--purple);line-height:1}
+.review-score span{color:var(--muted);font-size:14px}
+.review-hero p{color:var(--muted);font-size:13px;line-height:1.7;max-width:620px}
+.review-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:20px}
+.review-list{display:grid;gap:16px}
+.review-card{padding:24px}
+.review-card.correct{border-left:4px solid var(--green)}
+.review-card.wrong{border-left:4px solid #bb5b56}
+.review-card-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.review-index{font:600 13px 'DM Mono',monospace;color:var(--purple)}
+.review-badge{margin-left:auto;font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px}
+.review-badge.ok{background:#e5f4e9;color:var(--green)}
+.review-badge.bad{background:#fff0ef;color:#bb5b56}
+.review-card h2{font-size:17px;line-height:1.4;margin:6px 0 14px}
+.review-options{display:grid;gap:8px;margin:14px 0}
+.review-option{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:8px;padding:12px;font-size:13px;background:var(--canvas)}
+.review-option.is-correct{border-color:var(--green);background:#e5f4e9}
+.review-option.is-wrong{border-color:#bb5b56;background:#fff0ef}
+.review-letter{display:grid;place-items:center;width:24px;height:24px;flex:none;border-radius:50%;background:var(--paper);border:1px solid var(--line);font:600 11px 'DM Mono',monospace}
+.review-option-text{flex:1;min-width:0}
+.review-option em{font-style:normal;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+.review-option.is-correct em{color:var(--green)}
+.review-option.is-wrong em{color:#bb5b56}
+.review-note{margin-top:14px;padding:14px;border-radius:8px;background:var(--purple-soft);display:grid;gap:6px}
+.review-note b{font-size:13px;color:var(--purple)}
+.review-note span{font-size:12px;line-height:1.7;color:var(--ink)}
+.review-note.unanswered{background:#fff5e9}
+.review-note.unanswered b{color:var(--orange)}
+.review-note-link{display:inline-block;margin-top:10px}
+
+/* ------------------------------------------------------------------ */
+/* Phone usability                                                     */
+/* ------------------------------------------------------------------ */
+@media (max-width:650px){
+  /* Header: burger + back + theme/logout wrap neatly on small screens. */
+  .main>header{height:auto;min-height:60px;flex-wrap:wrap;gap:8px;padding:10px 14px}
+  .header-burger{display:inline-flex}
+  .shell.menu-open .header-burger{display:none}
+  .sidebar-burger{display:inline-flex}
+  .back-button{padding:8px 12px;font-size:12px}
+  .back-button span{display:inline}
+  .breadcrumb{display:none}
+  .header-actions{gap:8px;margin-left:auto}
+  .header-actions button{font-size:12px}
+  .xp-chip{display:none}
+
+  /* Comfortable tap targets and readable text. */
+  .content{padding:20px 14px 60px}
+  h1{font-size:26px;letter-spacing:-.8px}
+  .title-row h1{font-size:26px}
+  .title-row p{font-size:13px}
+  .panel{padding:16px}
+  .button{min-height:48px}
+  .answer{min-height:54px;padding:14px 12px;line-height:1.4}
+  .review-card{padding:16px}
+  .review-card h2{font-size:15px}
+  .review-score b{font-size:40px}
+  .review-hero{padding:22px 18px}
+  .review-badge{margin-left:0}
+  .quiz-layout{grid-template-columns:1fr}
+  .notes-step-head{display:block}
+  .notes-step-actions{margin-top:12px}
+  .subtopic-grid{grid-template-columns:1fr}
+  .test-question-actions{flex-wrap:wrap}
+  .test-question-actions .button{flex:1}
+  .table-row{grid-template-columns:32px 1fr 70px}
+  .review-option{font-size:12px}
+}
+
+@media (max-width:400px){
+  h1{font-size:23px}
+  .review-score{display:block}
+  .review-score span{display:block;margin-top:4px}
+}
+
+/* ================================================================== */
+/* Settings page                                                       */
+/* ================================================================== */
+.settings-group{padding:24px;margin-bottom:18px;max-width:820px}
+.settings-group .panel-head{align-items:flex-start}
+.settings-group .panel-head p{color:var(--muted);font-size:12.5px;line-height:1.6;margin:4px 0 0}
+.setting-field{display:grid;gap:7px;font-size:11px;font-weight:600;margin-top:18px;max-width:340px}
+.setting-field select{width:100%;border:1px solid var(--line);border-radius:5px;background:var(--paper);color:var(--ink);padding:12px 14px;font-size:13px;font-weight:400}
+.setting-field select:focus{outline:0;border-color:var(--purple);box-shadow:0 0 0 3px var(--purple-soft)}
+.setting-toggle{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:15px 0;border-top:1px solid var(--line);cursor:pointer}
+.settings-group .setting-toggle:first-of-type{margin-top:16px}
+.setting-toggle-copy{display:grid;gap:3px}
+.setting-toggle-copy b{font-size:13px}
+.setting-toggle-copy small{color:var(--muted);font-size:11px;line-height:1.5}
+.switch-pill{flex:none;width:44px;height:24px;border-radius:999px;border:1px solid var(--line);background:var(--canvas);padding:2px;transition:background .18s ease,border-color .18s ease}
+.switch-pill i{display:block;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:transform .18s ease}
+.switch-pill.on{background:var(--purple);border-color:var(--purple)}
+.switch-pill.on i{transform:translateX(19px)}
+.account-tabs{margin-bottom:18px;flex-wrap:wrap}
+.account-tabs button{flex:1;min-width:120px}
+.about-panel{padding:26px;max-width:760px}
+.about-head{display:flex;gap:16px;align-items:center;margin-bottom:16px}
+.about-avatar{width:62px;height:62px;flex:none;display:grid;place-items:center;border-radius:18px;background:linear-gradient(135deg,var(--purple),#8f7bff);color:#fff;font:700 20px var(--font-display)}
+.about-head h2{margin:4px 0 2px}
+.about-age{color:var(--muted);font-size:12px;margin:0}
+.about-panel p{color:var(--muted);line-height:1.75;font-size:13px}
+.about-facts{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.legal-panel{padding:26px;max-width:760px}
+.legal-panel h3{margin:18px 0 6px;font-size:14px}
+.legal-panel p{color:var(--muted);line-height:1.75;font-size:13px}
+.legal-note{border-left:3px solid var(--orange);padding-left:12px}
+.profile-settings-link{display:flex;align-items:center;justify-content:space-between;gap:14px;border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-top:18px;background:var(--purple-soft)}
+.profile-settings-link div{display:grid;gap:3px}
+.profile-settings-link b{font-size:13px}
+.profile-settings-link small{color:var(--muted);font-size:11px;line-height:1.5}
+.account-actions-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+.account-chip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--paper);border-radius:999px;padding:5px 12px 5px 5px;font-size:12px;font-weight:600}
+.account-chip img,.account-chip i{width:24px;height:24px;border-radius:50%;object-fit:cover;display:grid;place-items:center;background:var(--purple-soft);color:var(--purple);font-style:normal;font-size:11px}
+.account-chip:hover{border-color:var(--purple);color:var(--purple)}
+
+/* ================================================================== */
+/* Dashboard quick cards + progress links                              */
+/* ================================================================== */
+.dashboard-cta{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-top:20px}
+.quick-card{display:flex;flex-direction:column;gap:6px;padding:20px;text-decoration:none;color:inherit;transition:transform .18s ease,box-shadow .18s ease}
+.quick-card:hover{transform:translateY(-4px);box-shadow:0 14px 30px rgba(101,81,212,.14)}
+.quick-icon{font-size:22px;color:var(--purple)}
+.quick-card b{font-size:14px}
+.quick-card small{color:var(--muted);font-size:11px;line-height:1.5}
+.progress-cta-panel{margin:22px 0}
+.progress-link-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.progress-link{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:10px;padding:14px;text-decoration:none;color:inherit;transition:border-color .18s ease,transform .18s ease}
+.progress-link:hover{border-color:var(--purple);transform:translateX(3px)}
+.progress-link>span{font-size:20px;color:var(--purple)}
+.progress-link div{flex:1}
+.progress-link b{display:block;font-size:13px}
+.progress-link small{color:var(--muted);font-size:11px}
+.progress-link em{font-style:normal;color:var(--purple)}
+.mastery-highlight{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;margin-bottom:12px;border-radius:8px;background:var(--purple-soft)}
+.mastery-highlight b{font-size:12px;color:var(--purple)}
+.mastery-highlight small{color:var(--muted);font-size:11px}
+.mastery-count{font:600 11px var(--font-mono);color:var(--muted)}
+.mastery-link{font-size:11px;color:var(--purple);font-weight:600}
+.history-head{margin-top:20px}
+
+/* ================================================================== */
+/* Auth: verification + hints                                          */
+/* ================================================================== */
+.auth-notice{padding:12px 14px;border-radius:8px;background:var(--purple-soft);color:var(--purple);font-size:12px;line-height:1.6;margin-bottom:14px}
+.auth-demo-code{display:grid;gap:4px;padding:14px;border:1px dashed var(--purple);border-radius:10px;background:var(--canvas);margin-bottom:16px;text-align:center}
+.auth-demo-code span{font:500 10px var(--font-mono);letter-spacing:1.4px;color:var(--muted)}
+.auth-demo-code b{font:700 30px var(--font-mono);letter-spacing:6px;color:var(--purple)}
+.auth-demo-code small{color:var(--muted);font-size:10.5px;line-height:1.5}
+.verify-actions{display:flex;justify-content:space-between;gap:12px;margin-top:14px}
+.verify-actions .text-link{border:0;background:none;padding:0;cursor:pointer;font-size:12px;color:var(--purple)}
+.field-hint{display:block;color:var(--muted);font-size:10.5px;margin-top:5px;line-height:1.4}
+.custom-degree-field{animation:fieldReveal .28s ease}
+.level-badge{display:inline-flex;flex-direction:column;gap:2px;border-radius:10px;background:var(--purple-soft);color:var(--purple);padding:10px 16px;font:600 11px var(--font-mono)}
+.level-badge b{font-family:var(--font-display)}
+
+/* ================================================================== */
+/* 10 site animations                                                  */
+/* ================================================================== */
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@keyframes fieldReveal{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+@keyframes pulseGlow{0%,100%{box-shadow:0 0 0 0 rgba(101,81,212,.35)}50%{box-shadow:0 0 0 12px rgba(101,81,212,0)}}
+@keyframes pop{0%{transform:scale(.85);opacity:0}60%{transform:scale(1.06)}100%{transform:scale(1);opacity:1}}
+@keyframes slideInLeft{from{opacity:0;transform:translateX(-14px)}to{opacity:1;transform:none}}
+@keyframes shine{from{background-position:-200% 0}to{background-position:200% 0}}
+@keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+@keyframes barGrow{from{width:0}}
+@keyframes streakFlame{0%,100%{transform:scale(1) rotate(0)}50%{transform:scale(1.18) rotate(-4deg)}}
+@keyframes countUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes spinSlow{to{transform:rotate(360deg)}}
+
+/* 1. Page content eases in on every route change */
+.content>*{animation:fadeUp .34s ease both}
+/* 2. Cards lift warmly on hover (already on some; applied broadly) */
+.panel{transition:transform .2s ease,box-shadow .2s ease}
+/* 3. Stat cards pop in with a slight scale */
+.stat{animation:pop .4s ease both}
+.stat:nth-child(2){animation-delay:.05s}
+.stat:nth-child(3){animation-delay:.1s}
+.stat:nth-child(4){animation-delay:.15s}
+/* 4. Buttons glow gently to invite a tap */
+.button:not(:disabled):hover{animation:pulseGlow 1.6s ease infinite}
+/* 5. Progress bars grow from the left */
+.tiny-bar i{animation:barGrow .7s cubic-bezier(.3,1.2,.5,1) both}
+/* 6. Streak flame gently animates */
+.streak>span{display:inline-block;animation:streakFlame 2.2s ease-in-out infinite}
+/* 7. Review cards enter one after another */
+.review-card{animation:slideInLeft .32s ease both}
+.review-card:nth-child(2){animation-delay:.04s}
+.review-card:nth-child(3){animation-delay:.08s}
+.review-card:nth-child(4){animation-delay:.12s}
+/* 8. Answer options nudge on hover */
+.answer:hover,.subtopic-card:hover,.review-option:hover{transform:translateX(3px)}
+/* 9. Dashboard quick icons float */
+.quick-icon{animation:floaty 3.2s ease-in-out infinite}
+/* 10. Loading logo breathes while the app boots */
+.loading-screen img{animation:floaty 2.6s ease-in-out infinite}
+.auth-card{animation:fadeUp .4s ease both}
+.podium-card.p0{animation:pop .5s ease both}
+.result-star{animation:pop .5s ease both}
+.pill{animation:countUp .3s ease both}
+
+@media (prefers-reduced-motion: reduce){
+  *{animation:none !important;transition:none !important}
+}
+
+/* ================================================================== */
+/* Phone-first refinements                                             */
+/* ================================================================== */
+@media (max-width:650px){
+  .dashboard-cta{grid-template-columns:1fr 1fr;gap:10px}
+  .progress-link-grid{grid-template-columns:1fr}
+  .about-head{gap:12px}
+  .account-tabs button{min-width:0;flex:1;font-size:12px;padding:9px 8px}
+  .auth-demo-code b{font-size:26px;letter-spacing:4px}
+  .verify-actions{flex-direction:column;gap:8px;text-align:center}
+}
+@media (max-width:420px){
+  .dashboard-cta{grid-template-columns:1fr}
+  .content>*{animation-duration:.24s}
+}
+
+
+/* ================================================================== */
+/* Dashboard: start a new quiz                                         */
+/* ================================================================== */
+.dashboard-course-prompt{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:20px 22px;margin-bottom:18px;border-color:#d5cef6;background:var(--purple-soft)}
+.dashboard-course-prompt>div{flex:1;min-width:200px}
+.dashboard-course-prompt b{font-size:14px}
+.dashboard-course-prompt p{color:var(--muted);font-size:12.5px;line-height:1.55;margin:4px 0 0}
+.dashboard-course-icon{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;flex:none;border-radius:50%;background:var(--paper);color:var(--purple);font-size:18px}
+.milestone-banner{display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:22px 24px;margin-bottom:18px;border-color:#e2c987;background:linear-gradient(135deg,#fff7e3,#fdf0cf)}
+.milestone-banner>div{flex:1;min-width:220px}
+.milestone-banner h2{margin:6px 0 4px;font-size:19px;color:#8a6a12}
+.milestone-banner p{color:#8a6a12;font-size:12.5px;line-height:1.6;margin:0}
+.milestone-icon{display:inline-flex;align-items:center;justify-content:center;width:46px;height:46px;flex:none;border-radius:50%;background:#f6d879;color:#7a5b0d;font-size:22px;box-shadow:0 0 0 6px rgba(246,216,121,.35)}
+.new-quiz-panel{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;padding:22px;margin-bottom:18px}
+.new-quiz-copy h2{margin:6px 0 4px}
+.new-quiz-copy p{color:var(--muted);font-size:12.5px;line-height:1.6;margin:0}
+.new-quiz-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.new-quiz-select{appearance:none;-webkit-appearance:none;border:1px solid var(--line);border-radius:5px;background-color:var(--paper);background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23837d91' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;color:var(--ink);padding:12px 36px 12px 14px;font-size:13px;min-width:190px;transition:border-color .18s ease,box-shadow .18s ease}
+.new-quiz-select:hover{border-color:#d5cef6}
+.new-quiz-select:focus{outline:0;border-color:var(--purple);box-shadow:0 0 0 3px var(--purple-soft)}
+
+@media (max-width:650px){
+  .new-quiz-panel{display:grid;gap:14px}
+  .new-quiz-controls{display:grid;grid-template-columns:1fr;gap:10px}
+  .new-quiz-select{width:100%;min-height:48px}
+  .new-quiz-controls .button{width:100%}
+}
+
+/* ------------------------------------------------------------------ */
+/* Practice lab: program input box (shown only for Scanner/JOptionPane) */
+/* ------------------------------------------------------------------ */
+.input{padding:0;overflow:hidden}
+.input .output-head span{color:var(--purple)}
+.program-input{display:block;width:100%;min-height:120px;border:0;resize:vertical;outline:0;padding:18px;background:#292437;color:#e3dced;font:12px/1.7 'DM Mono'}
+.program-input::placeholder{color:#8b83a0}
+.input>small{display:block;border-top:1px solid var(--line);padding:13px 17px;color:var(--muted);font-size:10px}

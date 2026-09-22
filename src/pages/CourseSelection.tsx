@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { popularCourses } from "../utils/courseCatalog";
+import { visibleCourses } from "../utils/courseCatalog";
 import { degreeCatalog } from "../utils/degreeCatalog";
 
 export function CourseSelection({
@@ -19,7 +19,7 @@ export function CourseSelection({
   const [courseSearchOpen, setCourseSearchOpen] = useState(false);
   const [customCourse, setCustomCourse] = useState("");
   const [message, setMessage] = useState("");
-  const visibleCourses = popularCourses.filter(([name, category]) =>
+  const matchingCourses = visibleCourses.filter(([name, category]) =>
     `${name} ${category}`.toLowerCase().includes(query.toLowerCase()),
   );
   const toggleCourse = (name: string) => {
@@ -77,7 +77,7 @@ export function CourseSelection({
         <span className="pill">{selectedCourses.length} selected</span>
       </div>
       <div className="course-grid">
-        {visibleCourses.map(([name, category, icon]) => {
+        {matchingCourses.map(([name, category, icon]) => {
           const selected = selectedCourses.includes(name);
           return (
             <button

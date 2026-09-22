@@ -4,6 +4,14 @@ export type DegreeOption = {
 };
 
 export const degreeCatalog: DegreeOption[] = [
+  {
+    name: "Computer Science and Mathematics",
+    topics: ["Java", "Data Structures", "Algorithms", "Calculus"],
+  },
+  {
+    name: "Statistics and Mathematics",
+    topics: ["Statistics", "Calculus", "Algebra"],
+  },
   { name: "Computer Science", topics: ["Java", "Data Structures", "Algorithms"] },
   { name: "Software Engineering", topics: ["Java", "Algorithms", "Web Development"] },
   { name: "Information Technology", topics: ["Java", "Cybersecurity", "SQL & Databases"] },

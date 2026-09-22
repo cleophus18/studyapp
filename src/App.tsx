@@ -37,6 +37,25 @@ import {
 } from "./utils/emailVerification";
 
 type Difficulty = "Easy" | "Medium" | "Hard";
+// Points awarded per correct answer, ordered by difficulty: Easy earns the
+// least, Medium the middle amount, and Hard the most.
+const POINTS_PER_DIFFICULTY: Record<Difficulty, number> = {
+  Easy: 10,
+  Medium: 20,
+  Hard: 40,
+};
+// No single piece of work (one quiz, test or challenge) can award more than this.
+const MAX_POINTS_PER_WORK = 5000;
+// Reaching this total unlocks a special thank-you message.
+const THANK_YOU_THRESHOLD = 100_000;
+// This account is a founder account and earns (and shows) unlimited points.
+const INFINITE_XP_EMAIL = "cleotshinyaleni@gmail.com";
+const INFINITE_XP = Number.POSITIVE_INFINITY;
+const hasInfiniteXp = (user: User | null) =>
+  (user?.email || "").toLowerCase() === INFINITE_XP_EMAIL;
+// Renders an XP total, showing "∞" for the founder's unlimited account.
+const formatXp = (value: number) =>
+  Number.isFinite(value) ? value.toLocaleString() : "∞";
 type User = {
   id?: number;
   name: string;
@@ -1239,9 +1258,12 @@ function App() {
   const [scores, setScores] = useState<number[]>(() =>
     JSON.parse(localStorage.getItem("java-scores") || "[]"),
   );
-  const [xp, setXp] = useState(() =>
+  const [storedXp, setXp] = useState(() =>
     Number(localStorage.getItem("java-xp") || 320),
   );
+  // Derived during render (not set in an effect): the founder account always
+  // shows and keeps unlimited points, whatever is stored on this device.
+  const xp = hasInfiniteXp(user) ? INFINITE_XP : storedXp;
   const [selectedCourses, setSelectedCourses] = useState<string[]>(() =>
     JSON.parse(localStorage.getItem("study-courses") || "[]"),
   );
@@ -1267,10 +1289,15 @@ function App() {
     const nextAnswered = [...new Set([...answered, ...ids])];
     setAnswered(nextAnswered);
     setScores([...scores, score]);
-    setXp(xp + earned);
+    // No single piece of work can award more than the cap. The founder account
+    // always shows unlimited points, so we never store a bogus huge number for
+    // it — the displayed total is derived from the account instead.
+    const capped = Math.min(earned, MAX_POINTS_PER_WORK);
+    const nextStoredXp = storedXp + capped;
+    setXp(nextStoredXp);
     localStorage.setItem("java-answered", JSON.stringify(nextAnswered));
     localStorage.setItem("java-scores", JSON.stringify([...scores, score]));
-    localStorage.setItem("java-xp", String(xp + earned));
+    localStorage.setItem("java-xp", String(nextStoredXp));
     // Answering a quiz keeps the weekly streak alive.
     recordWeeklyActivity();
   };
@@ -1350,6 +1377,7 @@ function App() {
                     answered={answered}
                     scores={scores}
                     selectedCourses={selectedCourses}
+                    xp={xp}
                   />
                 </Shell>
               </Guard>
@@ -1965,6 +1993,12 @@ function Shell({
   const closeOnMobile = () => {
     if (window.innerWidth <= 650) setExpanded(false);
   };
+  // When the menu is open and the user starts interacting with the page itself
+  // (not the menu), close the menu automatically. A pointer landing inside the
+  // sidebar is ignored so menu clicks still work normally.
+  const interactWithPage = () => {
+    if (expanded && !dragging.current) setExpanded(false);
+  };
   const startResize = (event: React.PointerEvent) => {
     event.preventDefault();
     dragging.current = true;
@@ -2057,7 +2091,7 @@ function Shell({
           onPointerDown={startResize}
         />
       </aside>
-      <div className="main">
+      <div className="main" onMouseDown={interactWithPage}>
         <header>
           <button
             className="hamburger header-burger"
@@ -2098,13 +2132,17 @@ function Dashboard({
   answered,
   scores,
   selectedCourses,
+  xp,
 }: {
   user: User | null;
   answered: string[];
   scores: number[];
   selectedCourses: string[];
+  xp: number;
 }) {
   const navigate = useNavigate();
+  // A milestone thank-you shows once the student reaches the points threshold.
+  const reachedMilestone = xp >= THANK_YOU_THRESHOLD;
   // Stats shown here are deliberately different from the ones on My Progress.
   const bestScore = scores.length ? Math.max(...scores) : 0;
   const testsTaken = (() => {
@@ -2140,6 +2178,15 @@ function Dashboard({
         : pick;
     navigate(`/quiz/${encodeURIComponent(topic)}`);
   };
+  // "Start with notes" opens the reading material for the chosen sub-topic, so
+  // students can learn the concept before being quizzed on it.
+  const startNotes = () => {
+    if (pick === "random") {
+      navigate("/notes");
+      return;
+    }
+    navigate(`/notes?category=Java&module=${encodeURIComponent(pick)}`);
+  };
   return (
     <>
       <div className="title-row dashboard-hero">
@@ -2151,6 +2198,22 @@ function Dashboard({
           <p>Here is how your Java learning is going.</p>
         </div>
       </div>
+      {reachedMilestone && (
+        <section className="panel milestone-banner">
+          <span className="milestone-icon">✦</span>
+          <div>
+            <span className="eyebrow">MILESTONE UNLOCKED</span>
+            <h2>
+              {formatXp(xp)} points — thank you for using StudyLab!
+            </h2>
+            <p>
+              You have reached {THANK_YOU_THRESHOLD.toLocaleString()} points.
+              Thank you for learning with us — keep going, every question makes
+              you sharper.
+            </p>
+          </div>
+        </section>
+      )}
       {!selectedCourses.length && (
         <section className="panel dashboard-course-prompt">
           <span className="dashboard-course-icon">✦</span>
@@ -2188,6 +2251,9 @@ function Dashboard({
               </option>
             ))}
           </select>
+          <button className="button secondary" onClick={startNotes}>
+            Start with notes <span>→</span>
+          </button>
           <button className="button" onClick={startQuiz}>
             Start quiz <span>→</span>
           </button>
@@ -2759,9 +2825,19 @@ function Quiz({
       setChallengeCode("");
       setSubmitted(false);
       if (index === pool.length - 1) {
+        // Points scale with difficulty: Easy earns the least, Medium the middle
+        // amount, and Hard the most. The total for this quiz is capped below.
+        const earned = next.reduce(
+          (total, correct, questionIndex) =>
+            correct
+              ? total +
+                POINTS_PER_DIFFICULTY[pool[questionIndex].difficulty]
+              : total,
+          0,
+        );
         onFinish(
           Math.round((next.filter(Boolean).length / next.length) * 100),
-          25 + next.filter(Boolean).length * 10,
+          Math.min(earned, MAX_POINTS_PER_WORK),
           pool.map((item) => item.id),
         );
         setReviewMode(true);
@@ -2968,7 +3044,7 @@ function Quiz({
             <span>
               {hardProject
                 ? `${Math.floor(hardSeconds / 60)}:${String(hardSeconds % 60).padStart(2, "0")}`
-                : "+40 XP"}
+                : `+${POINTS_PER_DIFFICULTY[q.difficulty]} XP`}
             </span>
           </div>
           <h2>{hardProject ? project?.prompt : q.prompt}</h2>
@@ -3119,8 +3195,15 @@ function Quiz({
               <div className="quiz-rule">
                 <b>✦</b>
                 <span>
-                  <strong>Earn 40 XP</strong>
-                  <small>For every correct answer</small>
+                  <strong>
+                    Earn {POINTS_PER_DIFFICULTY.Easy}–
+                    {POINTS_PER_DIFFICULTY.Hard} XP
+                  </strong>
+                  <small>
+                    More points for harder questions, up to {
+                      MAX_POINTS_PER_WORK.toLocaleString()
+                    } per quiz
+                  </small>
                 </span>
               </div>
             </>
@@ -3134,13 +3217,105 @@ function Quiz({
 const HELLO_WORLD_CODE =
   'public class Main {\n  public static void main(String[] args) {\n    System.out.println("Hello, World!");\n  }\n}';
 
+// A parsed line of program output: either plain console text, or a JOptionPane
+// dialog that the server emitted through the custom bridge.
+type OutputLine =
+  | { kind: "text"; text: string }
+  | { kind: "input"; message: string }
+  | { kind: "message"; level: "info" | "warning" | "error"; message: string }
+  | { kind: "confirm"; message: string };
+
+const JOPT_INPUT = "@@JOPT_INPUT@@";
+const JOPT_MESSAGE = "@@JOPT_MESSAGE@@";
+const JOPT_CONFIRM = "@@JOPT_CONFIRM@@";
+
+// Turns raw runner output into structured lines, pulling out the JOptionPane
+// markers so the browser can draw on-brand dialogs instead of raw text.
+function parseOutput(raw: string): OutputLine[] {
+  const lines = raw.split(/\r?\n/).filter((line) => line.length > 0);
+  return lines
+    .map((line): OutputLine | null => {
+      if (line.startsWith(JOPT_INPUT)) {
+        return { kind: "input", message: line.slice(JOPT_INPUT.length) };
+      }
+      if (line.startsWith(JOPT_MESSAGE)) {
+        const [, level, message] = line.slice(JOPT_MESSAGE.length).split("|");
+        const safeLevel =
+          level === "warning" || level === "error" ? level : "info";
+        return { kind: "message", level: safeLevel, message };
+      }
+      if (line.startsWith(JOPT_CONFIRM)) {
+        // Format: @@JOPT_CONFIRM@@|<type>|<message>
+        const parts = line.slice(JOPT_CONFIRM.length).split("|");
+        const message = parts.slice(2).join("|");
+        return { kind: "confirm", message };
+      }
+      return { kind: "text", text: line };
+    })
+    .filter((line): line is OutputLine => line !== null);
+}
+
+// One on-brand dialog card, styled to match the StudyLab look and feel.
+function JOptionDialog({ line }: { line: OutputLine }) {
+  if (line.kind === "input") {
+    return (
+      <div className="jopt-dialog jopt-input">
+        <div className="jopt-title">
+          <span>⌨</span> Input
+        </div>
+        <p>{line.message || "Enter a value"}</p>
+        <div className="jopt-hint">
+          Type the answer in the INPUT box, then press Run Java.
+        </div>
+      </div>
+    );
+  }
+  if (line.kind === "confirm") {
+    return (
+      <div className="jopt-dialog jopt-confirm">
+        <div className="jopt-title">
+          <span>❔</span> Confirm
+        </div>
+        <p>{line.message}</p>
+        <div className="jopt-hint">
+          Answer <b>yes</b>, <b>no</b> or <b>cancel</b> in the INPUT box.
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className={`jopt-dialog jopt-message ${line.level}`}>
+      <div className="jopt-title">
+        <span>
+          {line.level === "error" ? "⚠" : line.level === "warning" ? "!" : "i"}
+        </span>
+        {line.level === "error"
+          ? "Error"
+          : line.level === "warning"
+            ? "Warning"
+            : "Message"}
+      </div>
+      <p>{line.message}</p>
+    </div>
+  );
+}
+
 function Practice() {
   const [code, setCode] = useState(HELLO_WORLD_CODE);
+  const [input, setInput] = useState("");
   const [output, setOutput] = useState(
     "Run your Java program to see real output.",
   );
+  // Structured output lines drive the on-brand JOptionPane dialog cards.
+  const [lines, setLines] = useState<OutputLine[]>([]);
   const [running, setRunning] = useState(false);
   const [challengeDone, setChallengeDone] = useState(false);
+  const usesJOptionPane = /\bJOptionPane\b/.test(code);
+  // Only programs that actually read from the console (Scanner, System.in,
+  // BufferedReader or a JOptionPane input dialog) get an input box. Plain code
+  // has nothing to type into, so no input field is shown for it.
+  const needsInput =
+    /\bScanner\b|\bSystem\.in\b|\bBufferedReader\b|\bJOptionPane\b/.test(code);
   const runCode = async () => {
     setRunning(true);
     setOutput("Compiling Main.java...");
@@ -3148,15 +3323,24 @@ function Practice() {
       const response = await fetch("/api/code/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({ code, input: needsInput ? input : "" }),
       });
       const result = await response.json();
-      setOutput(
-        result.ok
-          ? result.output || "(program produced no output)"
-          : `Compilation/runtime error:\\n${result.error}`,
-      );
+      if (result.ok) {
+        setLines(parseOutput(result.output || ""));
+        setOutput(
+          result.output
+            ? ""
+            : needsInput && !input.trim()
+              ? "(program produced no output — type your input first, then Run again)"
+              : "(program produced no output)",
+        );
+      } else {
+        setLines([]);
+        setOutput(`Compilation/runtime error:\\n${result.error}`);
+      }
     } catch {
+      setLines([]);
       setOutput(
         "Could not reach the Java runner. Start the API with npm run dev.",
       );
@@ -3179,7 +3363,9 @@ function Practice() {
       <>
         <div className="challenge-bar">
           <div>
-            <span className="eyebrow">EXERCISE · +40 XP</span>
+            <span className="eyebrow">
+              EXERCISE · +{POINTS_PER_DIFFICULTY.Easy} XP
+            </span>
             <h2>Say hello in Java</h2>
             <p>
               Run the starter program so it prints <code>Hello, World!</code>.
@@ -3213,12 +3399,54 @@ function Practice() {
             <div className="output-head">
               OUTPUT <span>● {running ? "running" : "ready"}</span>
             </div>
-            <pre>{output}</pre>
+            {lines.some((line) => line.kind !== "text") && (
+              <div className="jopt-stage">
+                {lines.map((line, index) =>
+                  line.kind === "text" ? null : (
+                    <JOptionDialog line={line} key={index} />
+                  ),
+                )}
+              </div>
+            )}
+            <pre>
+              {lines.length
+                ? lines
+                    .filter((line) => line.kind === "text")
+                    .map((line) => (line as { text: string }).text)
+                    .join("\n")
+                : output}
+            </pre>
             <small>
               Output comes from javac and java on the server, including compiler
               errors.
             </small>
           </section>
+          {needsInput && (
+            <section className="input panel">
+              <div className="output-head">
+                INPUT{" "}
+                <span>
+                  ● {usesJOptionPane ? "JOptionPane dialog" : "scanner ready"}
+                </span>
+              </div>
+              <textarea
+                className="program-input"
+                spellCheck={false}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder={
+                  usesJOptionPane
+                    ? "Type your dialog answers (one per line, top to bottom), then press Run Java."
+                    : "Type each value the program asks for on its own line, then press Run Java."
+                }
+              />
+              <small>
+                {usesJOptionPane
+                  ? "JOptionPane dialogs are shown above in StudyLab style. Type each answer on its own line."
+                  : "Your program reads console input. Type one value per line — they are fed in the order the program asks."}
+              </small>
+            </section>
+          )}
         </div>
         <div className="mistake-row panel">
           <span className="history-check">◌</span>
@@ -3307,8 +3535,10 @@ function Progress({
         <Stat
           icon="✦"
           label="Total XP"
-          value={xp.toLocaleString()}
-          detail="Points earned"
+          value={formatXp(xp)}
+          detail={
+            Number.isFinite(xp) ? "Points earned" : "Unlimited founder account"
+          }
           color="orange"
         />
         <Stat
@@ -3520,22 +3750,6 @@ function Leaderboard({
   // Java-only board: StudyLab currently runs the Java module in the UI.
   const rows = [
     {
-      name: "Maya Chen",
-      category: "Java",
-      xp: 1840,
-      quizzes: 31,
-      average: 94,
-      streak: 18,
-    },
-    {
-      name: "Jordan Lee",
-      category: "Java",
-      xp: 1620,
-      quizzes: 26,
-      average: 91,
-      streak: 12,
-    },
-    {
       name: user?.name || "Student",
       category: "Java",
       xp,
@@ -3544,14 +3758,6 @@ function Leaderboard({
         ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
         : 0,
       streak: myStreak,
-    },
-    {
-      name: "Sam Okafor",
-      category: "Java",
-      xp: 980,
-      quizzes: 17,
-      average: 82,
-      streak: 7,
     },
   ].sort((a, b) => b.xp - a.xp);
   const visibleRows = rows;
@@ -3570,7 +3776,7 @@ function Leaderboard({
           <div className={`podium-card p${i}`} key={row.name}>
             <span>{i === 0 ? "♛" : `0${i + 1}`}</span>
             <b>{row.name}</b>
-            <strong>{row.xp.toLocaleString()} XP</strong>
+            <strong>{formatXp(row.xp)} XP</strong>
             <small>
               {row.average}% avg · {row.streak} week streak
             </small>
@@ -3601,7 +3807,7 @@ function Leaderboard({
               {row.name}
               {row.name === user?.name && <em>YOU</em>}
             </strong>
-            <span>{row.xp.toLocaleString()}</span>
+            <span>{formatXp(row.xp)}</span>
             <span>{row.quizzes}</span>
             <span>{row.average}%</span>
             <span>♨ {row.streak}</span>
@@ -4019,6 +4225,9 @@ function Settings({
             }}
           >
             <option value="en">English (only available)</option>
+            <option value="ve" disabled>
+              Tshivenda (coming soon)
+            </option>
           </select>
         </label>
       </section>

@@ -32,3 +32,11 @@ export const popularCourses: readonly Course[] = [
   ["English Language", "Languages", "Aa"],
   ["Design Thinking", "Creative", "✧"],
 ];
+
+// Only these courses are surfaced in the UI right now. The rest of the catalog
+// above is kept intact so modules can be switched back on later.
+export const visibleCourseNames: readonly string[] = ["Java"];
+
+export const visibleCourses: readonly Course[] = popularCourses.filter(([name]) =>
+  visibleCourseNames.includes(name),
+);

@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import bcrypt from "bcryptjs";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -153,20 +153,176 @@ app.delete("/api/auth/account", requireAuth, (req, res) => {
 });
 app.post("/api/auth/password-reset", (req, res) => res.json({ message: "If the account exists, reset instructions have been sent." }));
 
+// A program needs interactive input when it reads from the console. Programs
+// without Scanner never prompt, so the client hides its input box for them.
+const needsStdin = (code) =>
+  /\bScanner\b|\bSystem\.in\b|\bBufferedReader\b|\bJOptionPane\b/.test(code);
+
+// ---------------------------------------------------------------------------
+// Custom JOptionPane bridge.
+//
+// Real JOptionPane opens a Swing window, which cannot run on a headless server
+// (it throws HeadlessException). We cannot shadow javax.swing.JOptionPane either,
+// because the JDK's own copy always wins on the module path.
+//
+// So we REWRITE the program: a default-package helper (SLDialog) is compiled
+// alongside Main, and every "JOptionPane." reference is redirected to it. The
+// helper speaks a tiny line protocol on stdout and reads answers from stdin; the
+// browser draws an on-brand dialog and sends the typed answers back.
+const JOPT_INPUT = "@@JOPT_INPUT@@";
+const JOPT_MESSAGE = "@@JOPT_MESSAGE@@";
+const JOPT_CONFIRM = "@@JOPT_CONFIRM@@";
+const SLDIALOG_STUB = `import java.io.BufferedReader;
+import java.io.InputStreamReader;
+
+/** StudyLab helper: renders JOptionPane-style dialogs in the browser. */
+public class SLDialog {
+  public static final int YES_OPTION = 0;
+  public static final int NO_OPTION = 1;
+  public static final int CANCEL_OPTION = 2;
+  public static final int OK_OPTION = 0;
+  public static final int CLOSED_OPTION = -1;
+  public static final int YES_NO_OPTION = 0;
+  public static final int YES_NO_CANCEL_OPTION = 1;
+  public static final int OK_CANCEL_OPTION = 2;
+  public static final int INFORMATION_MESSAGE = 1;
+  public static final int WARNING_MESSAGE = 2;
+  public static final int ERROR_MESSAGE = 0;
+  public static final int PLAIN_MESSAGE = -1;
+
+  private static BufferedReader reader;
+
+  private static synchronized String readLine() {
+    try {
+      if (reader == null) reader = new BufferedReader(new InputStreamReader(System.in));
+      String line = reader.readLine();
+      return line == null ? "" : line;
+    } catch (Exception error) {
+      return "";
+    }
+  }
+
+  private static String asText(Object value) {
+    return value == null ? "" : String.valueOf(value);
+  }
+
+  public static String showInputDialog(Object message) {
+    System.out.println("${JOPT_INPUT}" + asText(message));
+    System.out.flush();
+    String answer = readLine();
+    return answer.isEmpty() ? null : answer;
+  }
+
+  public static String showInputDialog(Object parent, Object message) {
+    return showInputDialog(message);
+  }
+
+  public static String showInputDialog(Object parent, Object message, Object title, int type) {
+    return showInputDialog(message);
+  }
+
+  public static String showInputDialog(Object parent, Object message, Object title, int type, Object icon, Object[] options, Object initial) {
+    return showInputDialog(message);
+  }
+
+  public static void showMessageDialog(Object parent, Object message) {
+    System.out.println("${JOPT_MESSAGE}|info|" + asText(message));
+    System.out.flush();
+  }
+
+  public static void showMessageDialog(Object parent, Object message, Object title, int type) {
+    String kind = type == 2 ? "warning" : type == 0 ? "error" : "info";
+    System.out.println("${JOPT_MESSAGE}|" + kind + "|" + asText(message));
+    System.out.flush();
+  }
+
+  public static int showConfirmDialog(Object parent, Object message) {
+    return showConfirmDialog(parent, message, "Confirm", 0);
+  }
+
+  public static int showConfirmDialog(Object parent, Object message, Object title, int type) {
+    System.out.println("${JOPT_CONFIRM}|" + type + "|" + asText(message));
+    System.out.flush();
+    String answer = readLine().trim().toLowerCase();
+    if (answer.startsWith("y")) return YES_OPTION;
+    if (answer.startsWith("n")) return NO_OPTION;
+    if (answer.startsWith("c") || answer.isEmpty()) return CANCEL_OPTION;
+    return YES_OPTION;
+  }
+}
+`;
+const usesJOptionPane = (code) => /\bJOptionPane\b/.test(code);
+
+// Redirects JOptionPane usage to the StudyLab helper: drops the javax.swing
+// import and swaps the class name, so the code compiles against SLDialog.
+function rewriteJOptionPane(code) {
+  return code
+    .replace(/^\s*import\s+javax\.swing\.JOptionPane\s*;\s*$/gm, "")
+    .replace(/\bJOptionPane\b/g, "SLDialog");
+}
+
+// Runs "java Main" with an optional stdin payload and resolves with the full
+// stdout/stderr once the process exits (or after a timeout).
+function runJavaProgram(cwd, input, timeoutMs = 8000) {
+  return new Promise((resolve, reject) => {
+    const child = spawn("java", ["-cp", cwd, "Main"], { cwd, windowsHide: true });
+    let stdout = "";
+    let stderr = "";
+    const timer = setTimeout(() => {
+      child.kill();
+      reject({ stderr: "Execution timed out after 8 seconds.", stdout });
+    }, timeoutMs);
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      reject({ stderr: error.message, stdout });
+    });
+    child.on("close", (exitCode) => {
+      clearTimeout(timer);
+      resolve({ stdout, stderr, exitCode });
+    });
+    // Feed the typed values, then close stdin so Scanner sees end-of-input.
+    if (input) child.stdin.write(input.endsWith("\n") ? input : `${input}\n`);
+    child.stdin.end();
+  });
+}
+
 app.post("/api/code/run", asyncHandler(async (req, res) => {
   const code = typeof req.body?.code === "string" ? req.body.code : "";
+  const input = typeof req.body?.input === "string" ? req.body.input : "";
   if (!code.trim() || code.length > 12000) throw badRequest("Provide Java code under 12,000 characters");
+  if (input.length > 4000) throw badRequest("Input is limited to 4,000 characters");
   if (!/\bclass\s+Main\b/.test(code)) throw badRequest("Your code must contain a public class Main");
+  const joption = usesJOptionPane(code);
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "javalab-"));
   const source = path.join(directory, "Main.java");
   try {
-    await fs.writeFile(source, code, "utf8");
-    await execFileAsync("javac", ["Main.java"], { cwd: directory, timeout: 8000, windowsHide: true });
-    const result = await execFileAsync("java", ["-cp", directory, "Main"], { cwd: directory, timeout: 8000, windowsHide: true, maxBuffer: 100000 });
-    res.json({ ok: true, output: result.stdout, error: result.stderr || "" });
+    // When the program uses JOptionPane, redirect those calls to the StudyLab
+    // helper and compile that helper alongside Main.java.
+    const programSource = joption ? rewriteJOptionPane(code) : code;
+    await fs.writeFile(source, programSource, "utf8");
+    const compileTargets = ["Main.java"];
+    if (joption) {
+      await fs.writeFile(path.join(directory, "SLDialog.java"), SLDIALOG_STUB, "utf8");
+      compileTargets.push("SLDialog.java");
+    }
+    await execFileAsync("javac", compileTargets, { cwd: directory, timeout: 8000, windowsHide: true });
+    const result = await runJavaProgram(directory, input);
+    res.json({
+      ok: true,
+      output: result.stdout,
+      error: result.stderr || "",
+      needsInput: needsStdin(code),
+      usesJOptionPane: joption,
+    });
   } catch (error) {
     const detail = error?.stderr || error?.stdout || error?.message || "Java execution failed";
-    res.status(422).json({ ok: false, output: "", error: detail });
+    res.status(422).json({ ok: false, output: "", error: detail, needsInput: needsStdin(code) });
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
   }

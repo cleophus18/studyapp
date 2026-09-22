@@ -1,107 +1,326 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { notesForModule, type SubtopicNote } from "../utils/javaNotes";
 
-const studyNotes = [
+// ---------------------------------------------------------------------------
+// Notes flow
+//
+// Step 1  Pick a module (Java is the focus today; Calculus/Physics stay listed
+//         as coming soon so the flow is obvious and future-proof).
+// Step 2  Pick one or more sub-topics inside that module.
+// Step 3  Read the teaching notes for the chosen sub-topics, then jump straight
+//         into practice on the same sub-topic.
+// ---------------------------------------------------------------------------
+
+type ModuleCard = {
+  name: string;
+  category: string;
+  icon: string;
+  active: boolean;
+  description: string;
+  /** Human count label, e.g. "12 sub-topics". */
+  countLabel: string;
+};
+
+const noteModules: ModuleCard[] = [
   {
-    module: "Preliminaries & Functions",
-    category: "Calculus",
-    title: "Start every calculus problem with the function",
-    tips: [
-      "Write the domain and identify what the input and output represent.",
-      "Sketch a quick graph and mark intercepts, asymptotes, and transformations.",
-      "Keep algebra exact until the final line so later limit and derivative work stays accurate.",
-    ],
+    name: "Java",
+    category: "Coding",
+    icon: "☕",
+    active: true,
+    description: "Programming fundamentals, OOP, and practical Java challenges.",
+    countLabel: `${notesForModule("Java").length} sub-topics`,
   },
   {
-    module: "Limits & Continuity",
-    category: "Calculus",
-    title: "Pass limits by checking the conditions",
-    tips: [
-      "Try direct substitution first; only simplify or factor when the result is indeterminate.",
-      "For continuity, check that the function is defined, the limit exists, and both values agree.",
-      "For infinite limits, inspect the denominator sign from the left and right before deciding the direction.",
-    ],
+    name: "Mechanics",
+    category: "Physics",
+    icon: "⚙",
+    active: false,
+    description: "Motion, forces, energy, and mechanical systems.",
+    countLabel: "Coming soon",
   },
   {
-    module: "Differentiation Rules",
-    category: "Calculus",
-    title: "Differentiate from the outside in",
-    tips: [
-      "Label products, quotients, and composite functions before choosing a rule.",
-      "Use the chain rule for every nested expression and multiply by the derivative of the inside.",
-      "Simplify after differentiating, then test the result at an easy value.",
-    ],
+    name: "Calculus",
+    category: "Mathematics",
+    icon: "∫",
+    active: false,
+    description: "Limits, derivatives, and integration.",
+    countLabel: "Coming soon",
   },
-  {
-    module: "Applications",
-    category: "Calculus",
-    title: "Use derivatives to explain the graph",
-    tips: [
-      "Find critical points from f′(x) = 0 or where f′ is undefined, then test intervals.",
-      "Use f′ for increasing/decreasing behaviour and f″ for concavity and inflection points.",
-      "For optimisation, state the quantity being maximised or minimised and check endpoints.",
-    ],
-  },
-  { module: "Machines", category: "Physics", title: "Pass Machines with a free-body diagram", tips: ["Write down the load, effort, and distance before choosing a formula.", "Mechanical advantage is load ÷ effort; keep both forces in newtons.", "For efficiency, compare useful output work with input work and multiply by 100."] },
-  { module: "Loops", category: "Java", title: "Pass Loops by tracing one iteration", tips: ["Mark the counter value before and after every iteration.", "Check the stopping condition before changing the loop body.", "Test zero, one, and a normal-sized input to catch boundary mistakes."] },
-  { module: "Exception Handling", category: "Java", title: "Pass Exception Handling with safe recovery", tips: ["Keep risky statements inside try and handle the narrowest exception you can.", "Use a helpful message in catch instead of silently swallowing the error.", "Put cleanup in finally when a resource must always be released."] },
-  { module: "Data Types", category: "Java", title: "Pass Data Types without losing precision", tips: ["Choose int for whole values and double for measurements or fractions.", "Cast before integer division when the result needs decimals.", "Write the expected type beside each input while planning your solution."] },
 ];
 
 export function Notes() {
   const [searchParams] = useSearchParams();
-  const [query, setQuery] = useState(searchParams.get("module") || "");
-  const initialModule = searchParams.get("module") || "";
-  const initialCategory = searchParams.get("category") || studyNotes.find((note) => note.module === initialModule)?.category || "";
-  const [selectedCategory, setSelectedCategory] = useState(initialCategory);
-  const [selectedModule, setSelectedModule] = useState(initialModule);
-  const categories = [...new Set(studyNotes.map((note) => note.category))];
-  const modules = selectedCategory
-    ? studyNotes.filter((note) => note.category === selectedCategory).map((note) => note.module)
-    : [];
-  const visible = studyNotes.filter((note) =>
-    selectedCategory !== "" && selectedModule !== "" &&
-    note.category === selectedCategory &&
-    note.module === selectedModule &&
-    `${note.module} ${note.category} ${note.title} ${note.tips.join(" ")}`
-      .toLowerCase()
-      .includes(query.toLowerCase()),
+  const [module, setModule] = useState(
+    searchParams.get("category") === "Java" ? "Java" : "",
   );
+  const [selected, setSelected] = useState<string[]>(() => {
+    const initial = searchParams.get("module");
+    return initial ? [initial] : [];
+  });
+  // "viewing" is separate from "selected" so a student can tick several
+  // sub-topics on step 2 before opening the notes on step 3.
+  const [viewing, setViewing] = useState(() => Boolean(searchParams.get("module")));
+
+  const subtopics: SubtopicNote[] = useMemo(
+    () => (module ? notesForModule(module) : []),
+    [module],
+  );
+
+  const toggleSubtopic = (name: string) => {
+    setSelected((current) =>
+      current.includes(name)
+        ? current.filter((item) => item !== name)
+        : [...current, name],
+    );
+  };
+
+  const selectAll = () =>
+    setSelected(
+      selected.length === subtopics.length ? [] : subtopics.map((n) => n.subtopic),
+    );
+
+  const activeNotes = subtopics.filter((note) => selected.includes(note.subtopic));
+
+  const goToModuleStep = () => {
+    setModule("");
+    setSelected([]);
+    setViewing(false);
+  };
+  const goToSubtopicStep = () => setViewing(false);
+
   return (
     <>
       <div className="title-row">
-        <div><div className="eyebrow">STUDY NOTES</div><h1>Notes & tips.</h1><p>Practical reminders for passing specific modules with confidence.</p></div>
-        <Link className="button" to="/modules">Browse modules <span>→</span></Link>
+        <div>
+          <div className="eyebrow">STUDY NOTES</div>
+          <h1>Learn it, then practice it.</h1>
+          <p>
+            Notes that actually teach the sub-topic — the idea, the syntax, worked
+            examples and the traps — matched to the questions you will be asked.
+          </p>
+        </div>
+        <Link className="button" to="/test">
+          Take a 20-question test <span>→</span>
+        </Link>
       </div>
-      <div className="notes-controls">
-        <label>SUBJECT CATEGORY
-          <select value={selectedCategory} onChange={(event) => { setSelectedCategory(event.target.value); setSelectedModule(""); }}>
-            <option value="">Choose a category</option>
-            {categories.map((category) => <option key={category}>{category}</option>)}
-          </select>
-        </label>
-        <label>MODULE
-          <select value={selectedModule} disabled={!selectedCategory} onChange={(event) => setSelectedModule(event.target.value)}>
-            <option value="">{selectedCategory ? "Choose a module" : "Choose a category first"}</option>
-            {modules.map((module) => <option key={module}>{module}</option>)}
-          </select>
-        </label>
-        <div className="search notes-search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search a module from the calculus PDF..." /></div>
+
+      <ol className="notes-steps" aria-label="Notes progress">
+        <li className={module ? "done" : "active"}>
+          <b>1</b> Choose a module
+        </li>
+        <li
+          className={
+            module ? (viewing && activeNotes.length ? "done" : "active") : ""
+          }
+        >
+          <b>2</b> Choose sub-topics
+        </li>
+        <li className={viewing && activeNotes.length ? "active" : ""}>
+          <b>3</b> Read the notes
+        </li>
+      </ol>
+
+      {/* STEP 1 — module selection */}
+      {!module && (
+        <section className="notes-step">
+          <div className="module-label">
+            <span className="eyebrow">STEP 1</span>
+            <h2>Which module do you want notes for?</h2>
+          </div>
+          <div className="module-cards notes-module-cards">
+            {noteModules.map((item) => (
+              <button
+                className={
+                  item.active ? "module-card panel" : "module-card panel disabled"
+                }
+                type="button"
+                disabled={!item.active}
+                onClick={() => item.active && setModule(item.name)}
+                key={item.name}
+              >
+                <div className="module-card-icon">{item.icon}</div>
+                <div>
+                  <span className="eyebrow">
+                    {item.active ? "ACTIVE MODULE" : "COMING SOON"}
+                  </span>
+                  <h2>{item.name}</h2>
+                  <p>{item.description}</p>
+                  <span className="text-link">
+                    {item.active ? `Open ${item.countLabel} →` : item.countLabel}
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* STEP 2 — sub-topic selection */}
+      {module && !viewing && (
+        <section className="notes-step">
+          <div className="module-label notes-step-head">
+            <div>
+              <span className="eyebrow">STEP 2 · {module.toUpperCase()}</span>
+              <h2>Choose the sub-topics you want notes on</h2>
+              <p className="notes-step-hint">
+                Pick as many as you like. Each one teaches the concept, shows the
+                syntax, and works through examples.
+              </p>
+            </div>
+            <div className="notes-step-actions">
+              <button className="button secondary mini" type="button" onClick={goToModuleStep}>
+                ← Change module
+              </button>
+              <button className="button secondary mini" type="button" onClick={selectAll}>
+                {selected.length === subtopics.length && subtopics.length > 0
+                  ? "Clear all"
+                  : "Select all"}
+              </button>
+            </div>
+          </div>
+          <div className="subtopic-grid">
+            {subtopics.map((note, index) => {
+              const isOn = selected.includes(note.subtopic);
+              return (
+                <button
+                  className={isOn ? "subtopic-card selected" : "subtopic-card"}
+                  type="button"
+                  onClick={() => toggleSubtopic(note.subtopic)}
+                  key={note.subtopic}
+                >
+                  <span className="subtopic-index">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  <span className="subtopic-body">
+                    <strong>{note.subtopic}</strong>
+                    <small>{note.summary}</small>
+                  </span>
+                  <span className="subtopic-check">{isOn ? "✓" : "+"}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="notes-start-bar">
+            <span className="pill">
+              {selected.length} of {subtopics.length} selected
+            </span>
+            <button
+              className="button"
+              type="button"
+              disabled={!selected.length}
+              onClick={() => setViewing(true)}
+            >
+              Show my notes <span>→</span>
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* STEP 3 — the teaching notes */}
+      {module && viewing && activeNotes.length > 0 && (
+        <section className="notes-step">
+          <div className="module-label notes-step-head">
+            <div>
+              <span className="eyebrow">STEP 3 · {module.toUpperCase()} NOTES</span>
+              <h2>
+                {activeNotes.length} sub-topic
+                {activeNotes.length === 1 ? "" : "s"} to study
+              </h2>
+            </div>
+            <div className="notes-step-actions">
+              <button
+                className="button secondary mini"
+                type="button"
+                onClick={goToSubtopicStep}
+              >
+                ← Choose different sub-topics
+              </button>
+            </div>
+          </div>
+
+          <div className="notes-grid">
+            {activeNotes.map((note) => (
+              <article className="panel note-card teaching-note" key={note.subtopic}>
+                <div className="note-card-head">
+                  <span className="pill">{note.module}</span>
+                  <span className="eyebrow">{note.subtopic}</span>
+                </div>
+                <h2>{note.subtopic}</h2>
+                <p className="note-summary">{note.summary}</p>
+
+                {note.sections.map((section) => (
+                  <div className="note-section" key={section.heading}>
+                    <h3>{section.heading}</h3>
+                    <p>{section.body}</p>
+                    {section.bullets && (
+                      <ul className="note-bullets">
+                        {section.bullets.map((bullet) => (
+                          <li key={bullet}>{bullet}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ))}
+
+                <div className="note-block">
+                  <span className="eyebrow">SYNTAX CHEAT-SHEET</span>
+                  <pre className="note-code">{note.syntax.join("\n")}</pre>
+                </div>
+
+                {note.examples.map((example) => (
+                  <div className="note-block" key={example.label}>
+                    <span className="eyebrow">EXAMPLE · {example.label.toUpperCase()}</span>
+                    <pre className="note-code example-code">{example.code}</pre>
+                    <p className="note-takeaway">
+                      <b>Takeaway:</b> {example.takeaway}
+                    </p>
+                  </div>
+                ))}
+
+                <div className="note-block pitfalls-block">
+                  <span className="eyebrow">COMMON TRAPS (WHAT MAKES IT HARD)</span>
+                  <ul className="note-bullets">
+                    {note.pitfalls.map((pitfall) => (
+                      <li key={pitfall}>{pitfall}</li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="note-block revision-block">
+                  <span className="eyebrow">IF YOU GET ONE WRONG, RE-READ</span>
+                  <ul className="note-bullets">
+                    {note.revision.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="note-actions">
+                  <Link
+                    className="button mini"
+                    to={`/quiz/${encodeURIComponent(note.subtopic)}`}
+                  >
+                    Practice {note.subtopic} <span>→</span>
+                  </Link>
+                  <Link className="text-link" to="/test">
+                    Or take a mixed 20-question test →
+                  </Link>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <div className="module-selection-hint">
+        <span>✦</span>
+        <p>
+          Notes and practice are linked: every trap in these notes is what the
+          questions test. Read a sub-topic, then press <b>Practice</b> or open the{" "}
+          <Link to="/test">timed test</Link> to prove it.
+        </p>
       </div>
-      {!selectedCategory && <div className="panel empty">Choose a subject category to see only its related modules and tips.</div>}
-      {selectedCategory && !selectedModule && <div className="panel empty">Choose a module from the selected {selectedCategory} category to view its tips.</div>}
-      <div className="notes-grid">
-        {visible.map((note) => (
-          <article className="panel note-card" key={`${note.category}-${note.module}`}>
-            {note.category === "Calculus" && <div className="eyebrow">MAT1141 PDF NOTES</div>}
-            <div className="note-card-head"><span className="pill">{note.category}</span><span className="eyebrow">{note.module}</span></div>
-            <h2>{note.title}</h2>
-            <ul>{note.tips.map((tip) => <li key={tip}>{tip}</li>)}</ul>
-            <Link className="text-link" to={`/quiz/${note.module}`}>Practice this module →</Link>
-          </article>
-        ))}
-      </div>
-      {!visible.length && <div className="panel empty">No notes match that search yet. Try Machines, Loops, or Data Types.</div>}
     </>
   );
 }
